@@ -27,6 +27,15 @@ pub trait Model: Sized + Clone + Serialize + for<'de> Deserialize<'de> {
         Self::query().find(id, conn)
     }
 
+    /// Find a record by its primary key or return HTTP 404 Not Found error
+    fn find_or_fail(id: &str, conn: &rusqlite::Connection) -> Result<Self, crate::helpers::AbortError> {
+        match Self::find(id, conn) {
+            Ok(Some(model)) => Ok(model),
+            Ok(None) => Err(crate::helpers::AbortError::not_found(format!("Record in '{}' with key '{}' not found", Self::table_name(), id))),
+            Err(e) => Err(crate::helpers::AbortError::server_error(e)),
+        }
+    }
+
     /// Retrieve all records
     fn all(conn: &rusqlite::Connection) -> Result<Vec<Self>, String> {
         Self::query().get(conn)
@@ -1064,6 +1073,195 @@ impl SqlQuery {
     pub async fn fetch_one(&self) -> Result<Option<HashMap<String, String>>, String> {
         let rows = self.fetch_all().await?;
         Ok(rows.into_iter().next())
+    }
+
+    /// Asynchronously retrieve the first matching record or abort with HTTP 404
+    pub async fn first_or_fail(&self) -> Result<HashMap<String, String>, crate::helpers::AbortError> {
+        let opt = self.fetch_one().await.map_err(|e| crate::helpers::AbortError::server_error(e))?;
+        opt.ok_or_else(|| crate::helpers::AbortError::not_found("Requested record does not exist in database"))
+    }
+
+    /// Asynchronously paginate query results with total row count and limit/offset bounds
+    pub async fn paginate(&self, page: usize, per_page: usize) -> Result<Paginated<HashMap<String, String>>, String> {
+        let page = if page == 0 { 1 } else { page };
+        let per_page = if per_page == 0 { 15 } else { per_page };
+        let offset = (page - 1) * per_page;
+
+        // Count query
+        let count_sql = format!("SELECT COUNT(*) as total_count FROM ({}) as subquery", self.raw_sql);
+        let mut count_query = SqlQuery::new(count_sql);
+        count_query.bindings = self.bindings.clone();
+        count_query.engine = self.engine;
+
+        let count_rows = count_query.fetch_all().await?;
+        let total = count_rows.first()
+            .and_then(|r| r.get("total_count"))
+            .and_then(|s| s.parse::<usize>().ok())
+            .unwrap_or(0);
+
+        // Paged items query
+        let paged_sql = format!("{} LIMIT {} OFFSET {}", self.raw_sql, per_page, offset);
+        let mut paged_query = SqlQuery::new(paged_sql);
+        paged_query.bindings = self.bindings.clone();
+        paged_query.engine = self.engine;
+
+        let items = paged_query.fetch_all().await?;
+        Ok(Paginated::new(items, total, page, per_page))
+    }
+}
+
+/// Standard paginated dataset container with metadata and HTML navigation links
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Paginated<T> {
+    pub items: Vec<T>,
+    pub total: usize,
+    pub page: usize,
+    pub per_page: usize,
+    pub total_pages: usize,
+}
+
+impl<T> Paginated<T> {
+    pub fn new(items: Vec<T>, total: usize, page: usize, per_page: usize) -> Self {
+        let per_page = if per_page == 0 { 15 } else { per_page };
+        let total_pages = if total == 0 { 1 } else { (total + per_page - 1) / per_page };
+        let page = if page == 0 { 1 } else { page.min(total_pages) };
+        Self {
+            items,
+            total,
+            page,
+            per_page,
+            total_pages,
+        }
+    }
+
+    pub fn has_next(&self) -> bool {
+        self.page < self.total_pages
+    }
+
+    pub fn has_prev(&self) -> bool {
+        self.page > 1
+    }
+
+    pub fn next_page(&self) -> Option<usize> {
+        if self.has_next() { Some(self.page + 1) } else { None }
+    }
+
+    pub fn prev_page(&self) -> Option<usize> {
+        if self.has_prev() { Some(self.page - 1) } else { None }
+    }
+
+    pub fn from_index(&self) -> usize {
+        if self.total == 0 { 0 } else { (self.page - 1) * self.per_page + 1 }
+    }
+
+    pub fn to_index(&self) -> usize {
+        (self.page * self.per_page).min(self.total)
+    }
+
+    /// Renders accessible, styled Tailwind CSS pagination controls with Previous/Next buttons and page numbers
+    pub fn links_html(&self, base_url: &str) -> String {
+        let separator = if base_url.contains('?') { "&" } else { "?" };
+        let from_item = if self.total == 0 { 0 } else { (self.page - 1) * self.per_page + 1 };
+        let to_item = (self.page * self.per_page).min(self.total);
+
+        let prev_btn = if self.has_prev() {
+            format!(
+                r#"<a href="{}{sep}page={}" class="px-3 py-1.5 rounded-lg border border-zinc-700 bg-zinc-850 hover:bg-zinc-800 text-xs text-zinc-300 font-medium transition-colors">Previous</a>"#,
+                base_url, self.page - 1, sep = separator
+            )
+        } else {
+            r#"<span class="px-3 py-1.5 rounded-lg border border-zinc-800 bg-zinc-900/50 text-xs text-zinc-600 cursor-not-allowed">Previous</span>"#.to_string()
+        };
+
+        let next_btn = if self.has_next() {
+            format!(
+                r#"<a href="{}{sep}page={}" class="px-3 py-1.5 rounded-lg border border-zinc-700 bg-zinc-850 hover:bg-zinc-800 text-xs text-zinc-300 font-medium transition-colors">Next</a>"#,
+                base_url, self.page + 1, sep = separator
+            )
+        } else {
+            r#"<span class="px-3 py-1.5 rounded-lg border border-zinc-800 bg-zinc-900/50 text-xs text-zinc-600 cursor-not-allowed">Next</span>"#.to_string()
+        };
+
+        let mut pages_html = String::new();
+        for p in 1..=self.total_pages {
+            if p == self.page {
+                pages_html.push_str(&format!(
+                    r#"<span class="w-8 h-8 flex items-center justify-center rounded-lg bg-indigo-600 text-white text-xs font-bold shadow-sm">{}</span>"#,
+                    p
+                ));
+            } else if p <= 3 || p > self.total_pages.saturating_sub(2) || (p as isize - self.page as isize).abs() <= 1 {
+                pages_html.push_str(&format!(
+                    r#"<a href="{}{sep}page={}" class="w-8 h-8 flex items-center justify-center rounded-lg border border-zinc-800 hover:border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-xs text-zinc-400 hover:text-white transition-colors">{}</a>"#,
+                    base_url, p, p, sep = separator
+                ));
+            } else if !pages_html.ends_with(r#"<span class="px-1 text-zinc-600">...</span>"#) {
+                pages_html.push_str(r#"<span class="px-1 text-zinc-600">...</span>"#);
+            }
+        }
+
+        format!(
+            r#"<div class="flex items-center justify-between px-4 py-3 border-t border-zinc-800/80 bg-zinc-900/40 rounded-b-xl">
+                <div class="text-xs text-zinc-400">
+                    Showing <span class="font-semibold text-zinc-200">{}</span> to <span class="font-semibold text-zinc-200">{}</span> of <span class="font-semibold text-zinc-200">{}</span> results
+                </div>
+                <div class="flex items-center gap-1.5">
+                    {}
+                    <div class="flex items-center gap-1 mx-2">{}</div>
+                    {}
+                </div>
+            </div>"#,
+            from_item, to_item, self.total, prev_btn, pages_html, next_btn
+        )
+    }
+}
+
+/// Trait for defining database seeders (similar to Laravel's Seeder)
+pub trait Seeder: Send + Sync {
+    fn name(&self) -> &'static str;
+    fn run(&self, db: &Database) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
+}
+
+/// Registry of database seeders that can be run in batch or individually
+#[derive(Default)]
+pub struct SeederRegistry {
+    seeders: Vec<Box<dyn Seeder>>,
+}
+
+impl SeederRegistry {
+    pub fn new() -> Self {
+        Self { seeders: Vec::new() }
+    }
+
+    pub fn register<S: Seeder + 'static>(&mut self, seeder: S) -> &mut Self {
+        self.seeders.push(Box::new(seeder));
+        self
+    }
+
+    pub fn len(&self) -> usize {
+        self.seeders.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.seeders.is_empty()
+    }
+
+    pub fn run_all(&self, db: &Database) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
+        let mut ran = 0;
+        for s in &self.seeders {
+            s.run(db)?;
+            ran += 1;
+        }
+        Ok(ran)
+    }
+
+    pub fn run_class(&self, class_name: &str, db: &Database) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+        for s in &self.seeders {
+            if s.name().eq_ignore_ascii_case(class_name) {
+                s.run(db)?;
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 }
 

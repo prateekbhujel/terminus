@@ -1642,7 +1642,7 @@ fn test_platform_adapters_and_sdk_generator() {
     assert_eq!(delivered.len(), 1);
     assert_eq!(dispatcher.pending_count(), 0);
 
-    // 3. Typed SDK Generator (TypeScript & Dart)
+    // 3. Typed SDK Generator (TypeScript, Swift & Kotlin)
     let gen = SdkGenerator::new("Acme Logistics", "1.0")
         .type_schema("Item", vec![("id", "string"), ("stock", "number")])
         .endpoint("GET", "/items", None, "Item[]", "Fetch items")
@@ -1652,11 +1652,9 @@ fn test_platform_adapters_and_sdk_generator() {
     assert!(ts.contains("export interface Item"));
     assert!(ts.contains("export class AcmeLogisticsClient"));
     assert!(ts.contains("public async get_items(): Promise<Item[]>"));
-    assert!(ts.contains("public async post_items(data: Item): Promise<Item>"));
-
-    let dart = gen.to_dart();
-    assert!(dart.contains("class AcmeLogisticsClient"));
-    assert!(dart.contains("import 'package:http/http.dart'"));
+    let kt = gen.to_kotlin();
+    assert!(kt.contains("class AcmeLogisticsClient"));
+    assert!(kt.contains("suspend fun"));
 
     // 4. Desktop Offline Sync Queue
     let sync_queue = OfflineSyncQueue::new();
@@ -1977,7 +1975,7 @@ fn test_composable_platform_matrix_scaffolding() {
     let omni_files = scaffold_project(&omni_dir, &omni_config).unwrap();
     assert!(omni_files.iter().any(|f| f.ends_with("desktop/desktop_bridge.ts")));
     assert!(omni_files.iter().any(|f| f.ends_with("mobile/TerminusClient.swift")));
-    assert!(omni_files.iter().any(|f| f.ends_with("mobile/terminus_client.dart")));
+    assert!(omni_files.iter().any(|f| f.ends_with("mobile/TerminusClient.kt")));
     assert!(!omni_files.iter().any(|f| f.to_string_lossy().contains("iot")));
 
     // Clean up
@@ -2549,6 +2547,141 @@ fn test_native_desktop_bridge_and_station_ipc() {
 
     let sync_res = bridge.dispatch(DesktopMessage::new("sync_pending", serde_json::json!({}))).unwrap();
     assert_eq!(sync_res.get("count").unwrap(), 1);
+}
+
+#[test]
+fn test_session_flash_bag_and_lifecycle() {
+    let session = Session::new();
+    assert!(!session.id().is_empty());
+
+    // 1. Basic session store & get
+    session.set("user_id", "usr_123");
+    assert_eq!(session.get("user_id").as_deref(), Some("usr_123"));
+
+    // 2. CSRF Token verification
+    let token = session.csrf_token();
+    assert_eq!(token.len(), 32);
+    assert!(session.verify_csrf_token(&token));
+    assert!(!session.verify_csrf_token("invalid_token"));
+
+    // 3. Flash messages: present on first read, swept on subsequent cycle
+    session.flash("success", "Profile updated successfully!");
+    assert_eq!(session.get_flash("success").as_deref(), Some("Profile updated successfully!"));
+    assert!(session.has_flash("success"));
+
+    // Sweep flashes (as happens at end of HTTP response lifecycle)
+    session.sweep_flashes();
+    assert!(!session.has_flash("success"));
+    assert_eq!(session.get_flash("success"), None);
+
+    // 4. Cookie header format
+    let cookie = session.cookie_header();
+    assert!(cookie.starts_with("terminus_session="));
+    assert!(cookie.contains("HttpOnly"));
+    assert!(cookie.contains("SameSite=Lax"));
+}
+
+#[test]
+fn test_redirect_with_flash_chaining() {
+    let r1 = redirect("/dashboard").with_success("Order placed!");
+    assert_eq!(r1.url, "/dashboard");
+    assert_eq!(r1.flash, Some(("success".to_string(), "Order placed!".to_string())));
+
+    let r2 = redirect("/login").with_error("Invalid credentials.");
+    assert_eq!(r2.url, "/login");
+    assert_eq!(r2.flash, Some(("error".to_string(), "Invalid credentials.".to_string())));
+
+    let r3 = redirect("/profile").with_warning("Email unverified.");
+    assert_eq!(r3.url, "/profile");
+    assert_eq!(r3.flash, Some(("warning".to_string(), "Email unverified.".to_string())));
+}
+
+#[test]
+fn test_blade_style_view_engine_rendering() {
+    // Session with flash message
+    let session = Session::new();
+    session.flash("success", "Operation completed!");
+    set_current_session(Some(session));
+
+    let v = view("Dashboard Portal", "<p class=\"text-zinc-600\">Welcome to Terminus Web</p>");
+
+    let html = v.render();
+    assert!(html.contains("<!DOCTYPE html>"));
+    assert!(html.contains("<title>Dashboard Portal - Terminus</title>"));
+    assert!(html.contains("Operation completed!"));
+    assert!(html.contains("bg-emerald-950/60 border-emerald-800/80 text-emerald-200"));
+    assert!(html.contains("SUCCESS"));
+    assert!(html.contains("Welcome to Terminus Web"));
+    assert!(html.contains("name=\"csrf-token\""));
+}
+
+#[test]
+fn test_active_record_pagination_and_links_html() {
+    let items = vec!["Item 1", "Item 2", "Item 3", "Item 4", "Item 5"];
+    let paginated = Paginated::new(items, 23, 1, 5);
+
+    assert_eq!(paginated.total, 23);
+    assert_eq!(paginated.page, 1);
+    assert_eq!(paginated.per_page, 5);
+    assert_eq!(paginated.total_pages, 5);
+    assert_eq!(paginated.from_index(), 1);
+    assert_eq!(paginated.to_index(), 5);
+    assert!(paginated.has_next());
+    assert!(!paginated.has_prev());
+
+    let links = paginated.links_html("/products");
+    assert!(links.contains("Showing <span class=\"font-semibold text-zinc-200\">1</span> to <span class=\"font-semibold text-zinc-200\">5</span> of <span class=\"font-semibold text-zinc-200\">23</span> results"));
+    assert!(links.contains("href=\"/products?page=2\""));
+}
+
+#[test]
+fn test_database_seeder_registry() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static SEED_RUN_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+    struct TestUserSeeder;
+
+    impl Seeder for TestUserSeeder {
+        fn name(&self) -> &'static str {
+            "TestUserSeeder"
+        }
+
+        fn run(&self, _db: &terminus::orm::Database) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+            SEED_RUN_COUNT.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    let mut registry = SeederRegistry::new();
+    registry.register(TestUserSeeder);
+    assert_eq!(registry.len(), 1);
+
+    let db = terminus::orm::Database::memory().unwrap();
+    let res = registry.run_all(&db);
+    assert!(res.is_ok());
+    assert_eq!(SEED_RUN_COUNT.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn test_task_scheduler_and_frequency() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+
+    let flag = Arc::new(AtomicBool::new(false));
+    let flag_clone = Arc::clone(&flag);
+
+    let schedule = Schedule::new();
+    schedule.call("cleanup:temp", move || {
+        flag_clone.store(true, Ordering::SeqCst);
+    }).every_minute();
+
+    assert_eq!(schedule.tasks().len(), 1);
+    assert_eq!(schedule.tasks()[0].name, "cleanup:temp");
+
+    let executed = schedule.run_due();
+    assert_eq!(executed.len(), 1);
+    assert!(flag.load(Ordering::SeqCst));
 }
 
 

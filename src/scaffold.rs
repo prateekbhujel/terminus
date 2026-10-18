@@ -27,7 +27,7 @@ impl TargetPlatform {
         match s.trim().to_lowercase().as_str() {
             "web" | "w" | "browser" | "http" => Some(Self::Web),
             "desktop" | "d" | "desk" | "native-desktop" | "station" | "kiosk" | "tauri" | "electron" => Some(Self::Desktop),
-            "mobile" | "m" | "app" | "ios" | "android" | "kotlin" | "swift" | "flutter" => Some(Self::Mobile),
+            "mobile" | "m" | "app" | "ios" | "android" | "kotlin" | "swift" => Some(Self::Mobile),
             "iot" | "i" | "hardware" | "scanner" | "embedded" => Some(Self::IoT),
             _ => None,
         }
@@ -222,13 +222,8 @@ impl ProjectConfig {
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
-            preset: ProjectPreset::Universal,
-            targets: vec![
-                TargetPlatform::Web,
-                TargetPlatform::Desktop,
-                TargetPlatform::Mobile,
-                TargetPlatform::IoT,
-            ],
+            preset: ProjectPreset::Fullstack,
+            targets: vec![TargetPlatform::Web],
             frontend: FrontendChoice::None,
             database: DatabaseChoice::Sqlite,
             port: 3000,
@@ -821,10 +816,9 @@ cat desktop/desktop_bridge.ts
         instructions.push(
             r#"### Mobile Application Clients
 
-Native Swift (iOS), Native Kotlin (Android), and Flutter/Dart clients are located in `./mobile`:
+Native Swift (iOS) and Native Kotlin (Android) clients are located in `./mobile`:
 - iOS: `mobile/TerminusClient.swift`
-- Android: `mobile/TerminusClient.kt`
-- Flutter / Cross-Platform: `mobile/terminus_client.dart`"#
+- Android: `mobile/TerminusClient.kt`"#
                 .to_string(),
         );
     }
@@ -895,7 +889,7 @@ Zero build steps required! Static HTMX assets are served directly from `./public
         tree.push("├── desktop/            # Native desktop station daemon & direct IPC bridge");
     }
     if config.has_target(TargetPlatform::Mobile) {
-        tree.push("├── mobile/             # Native Swift (iOS), Kotlin (Android), & Dart SDKs");
+        tree.push("├── mobile/             # Native Swift (iOS) & Kotlin (Android) SDKs");
     }
     if config.has_target(TargetPlatform::IoT) {
         tree.push("├── iot/                # IoT hardware scanner & telemetry scripts");
@@ -1048,7 +1042,7 @@ This directory contains the native desktop workstation station integration for *
     Ok(files)
 }
 
-/// Scaffolds Mobile target files (Swift for iOS, Kotlin for Android, Dart for Flutter)
+/// Scaffolds Mobile target files (Swift for iOS and Kotlin for Android)
 pub fn scaffold_mobile_target(dest_dir: &Path, config: &ProjectConfig) -> io::Result<Vec<PathBuf>> {
     let mut files = Vec::new();
     fs::create_dir_all(dest_dir)?;
@@ -1151,77 +1145,15 @@ class TerminusClient(
     fs::write(&k_path, kotlin_code)?;
     files.push(k_path);
 
-    let dart_code = format!(
-        r#"//
-//  terminus_client.dart
-//  {name} Mobile Client (Flutter / Android / iOS)
-//  Powered by Terminus Framework
-//
-
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-
-class Item {{
-  final int id;
-  final String title;
-  final String status;
-
-  Item({{required this.id, required this.title, required this.status}});
-
-  factory Item.fromJson(Map<String, dynamic> json) {{
-    return Item(
-      id: json['id'] as int,
-      title: json['title'] as String,
-      status: json['status'] as String,
-    );
-  }}
-}}
-
-class TerminusClient {{
-  final String baseUrl;
-  String? bearerToken;
-
-  TerminusClient({{this.baseUrl = 'http://10.0.2.2:3000'}});
-
-  void setBearerToken(String token) {{
-    bearerToken = token;
-  }}
-
-  Future<List<Item>> fetchItems() async {{
-    final uri = Uri.parse('$baseUrl/api/v1/items');
-    final headers = <String, String>{{
-      'Content-Type': 'application/json',
-    }};
-    if (bearerToken != null) {{
-      headers['Authorization'] = 'Bearer $bearerToken';
-    }}
-
-    final response = await http.get(uri, headers: headers);
-    if (response.statusCode == 200) {{
-      final List<dynamic> list = jsonDecode(response.body);
-      return list.map((e) => Item.fromJson(e as Map<String, dynamic>)).toList();
-    }} else {{
-      throw Exception('Failed to load items: ${{response.statusCode}}');
-    }}
-  }}
-}}
-"#,
-        name = config.name
-    );
-    let d_path = dest_dir.join("terminus_client.dart");
-    fs::write(&d_path, dart_code)?;
-    files.push(d_path);
-
     let readme_content = format!(
-        r#"# {name} — Mobile Client Target
+        r#"# {name} — Native Mobile Client Target
 
-This directory contains native mobile SDK adapters for **{name}**.
+This directory contains pure native mobile SDK adapters for **{name}**.
 
 ## Platforms
 
 - **iOS (Native Swift)**: `TerminusClient.swift` supports modern `async/await`, `ObservableObject`, and Bearer token auth.
 - **Android (Native Kotlin)**: `TerminusClient.kt` supports Kotlin Coroutines (`suspend fun`), `Dispatchers.IO`, and Jetpack Compose integration.
-- **Cross-Platform (Flutter / Dart)**: `terminus_client.dart` provides typed HTTP client methods with automatic JSON deserialization.
 
 ## OpenAPI & SDK Generation
 
@@ -1229,7 +1161,6 @@ Export the latest API contracts anytime:
 ```bash
 terminus make:sdk --lang=swift
 terminus make:sdk --lang=kotlin
-terminus make:sdk --lang=dart
 terminus make:sdk --lang=openapi
 ```
 "#,

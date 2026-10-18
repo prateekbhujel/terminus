@@ -278,7 +278,7 @@ impl Default for ServiceSpec {
             client_sdk_languages: vec![
                 "typescript".to_string(),
                 "swift".to_string(),
-                "dart".to_string(),
+                "kotlin".to_string(),
                 "python".to_string(),
             ],
         }

@@ -19,6 +19,8 @@ pub mod queue;
 pub mod repository;
 pub mod resource;
 pub mod scaffold;
+pub mod schedule;
+pub mod session;
 pub mod spec;
 pub mod studio;
 pub mod table;
@@ -30,7 +32,8 @@ pub mod ws;
 
 pub mod db {
     pub use crate::orm::{
-        Database, DatabaseConfig, DatabaseEngine, MongoCollection, RedisStore, SqlQuery,
+        Database, DatabaseConfig, DatabaseEngine, MongoCollection, Paginated, RedisStore, Seeder,
+        SeederRegistry, SqlQuery,
     };
     pub use crate::query;
 }
@@ -53,9 +56,10 @@ pub mod prelude {
     pub use crate::form::{FieldType, Form, FormField, FormSection, Section};
     pub use crate::helpers::{
         abort, abort_403, abort_404, abort_if, abort_unless, auth, can, can_all, can_any, cannot,
-        config, config_set, env, is_admin, is_superadmin, now, request, set_current_request,
-        set_current_user, timestamp, today, user, user_id, with_request, with_user,
-        AbortError, RequestAccessor, RequestInfo, Redirect, redirect, Result,
+        config, config_set, env, flash, flash_error, flash_success, is_admin, is_superadmin, now,
+        redirect, request, session, set_current_request, set_current_session, set_current_user,
+        timestamp, today, user, user_id, with_request, with_user, AbortError, Redirect,
+        RedirectResponse, RequestAccessor, RequestInfo, Result,
     };
     pub use crate::integrations::{
         OAuthProvider, PasskeyChallenge, PasskeyCredential, WebhookVerifier,
@@ -67,7 +71,8 @@ pub mod prelude {
     };
     pub use crate::orm::{
         BelongsTo, Blueprint, Database, DatabaseConfig, DatabaseEngine, DynamicModel, HasMany,
-        Model, ModelQuery, MongoCollection, RedisStore, Schema, SqlQuery,
+        Model, ModelQuery, MongoCollection, Paginated, RedisStore, Schema, Seeder, SeederRegistry,
+        SqlQuery,
     };
     pub use crate::query;
     pub use crate::db;
@@ -88,6 +93,8 @@ pub mod prelude {
         parse_targets, scaffold_project, DatabaseChoice, FrontendChoice, ProjectConfig,
         ProjectPreset, TargetPlatform,
     };
+    pub use crate::schedule::{Frequency, Schedule, ScheduledTask};
+    pub use crate::session::{FlashBag, Session, SessionStore};
     pub use crate::spec::{AppSpec, FieldSpec, ModelSpec, ResourceSpec, RouteSpec, ServiceSpec};
     pub use crate::studio::StudioApp;
     pub use crate::table::{
@@ -99,5 +106,6 @@ pub mod prelude {
         BearerToken, HasApiTokens, MemoryTokenStore, NewAccessToken, PersonalAccessToken,
         SqliteTokenStore, TokenRepository,
     };
+    pub use crate::view::{raw_html, view, View};
     pub use crate::ws::{BroadcastEvent, Broadcaster};
 }

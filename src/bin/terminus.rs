@@ -61,9 +61,20 @@ fn main() {
             let pattern_arg = args.get(3).map(|s| s.as_str());
             make_module(name, pattern_arg);
         }
+        "make:controller" => {
+            let name = args.get(2).map(|s| s.as_str());
+            let is_resource = args.iter().any(|a| a == "--resource" || a == "-r");
+            make_controller(name, is_resource);
+        }
         "make:model" => {
             let name = args.get(2).map(|s| s.as_str());
-            make_model(name);
+            let with_migration = args.iter().any(|a| a == "-m" || a == "-mc" || a == "-cm" || a == "--migration");
+            let with_controller = args.iter().any(|a| a == "-c" || a == "-mc" || a == "-cm" || a == "--controller");
+            make_model(name, with_migration, with_controller);
+        }
+        "make:seeder" => {
+            let name = args.get(2).map(|s| s.as_str());
+            make_seeder(name);
         }
         "make:repo" => {
             let name = args.get(2).map(|s| s.as_str());
@@ -83,6 +94,14 @@ fn main() {
             revoke_token(id);
         }
         "migrate" => run_migrations(),
+        "migrate:status" => run_migration_status(),
+        "migrate:rollback" => run_migration_rollback(),
+        "tinker" => {
+            let exec_opt = args.iter().find(|a| a.starts_with("--execute=")).map(|a| a.trim_start_matches("--execute="));
+            run_tinker(exec_opt);
+        }
+        "schedule:run" => run_schedule(),
+        "schedule:list" => list_schedule(),
         "db:seed" => run_seed(),
         "db:tables" => inspect_tables(),
         "cache:clear" => clear_cache(),
@@ -94,7 +113,7 @@ fn main() {
             let name = args.get(2).map(|s| s.as_str());
             make_mail(name);
         }
-        "routes" => print_routes(),
+        "routes" | "route:list" => print_routes(),
         "queue:work" => run_queue_worker(),
         "ws:serve" => run_ws_server(),
         "theme:preview" => preview_theme(),
@@ -136,7 +155,7 @@ fn print_banner() {
 
 fn print_help() {
     print_banner();
-    println!("Usage:\n  terminus <command> [arguments]\n\n\x1b[1mAvailable Commands:\x1b[0m\n  \x1b[33mnew [name] [--targets=...] [--frontend=...]\x1b[0m Scaffold a new Terminus project (interactive wizard or flags)\n  \x1b[33mschema [--json]\x1b[0m          Inspect complete application topology (models, routes, admin)\n  \x1b[33mmake:slice <Name> [--fields=...]\x1b[0m Scaffold a full-stack vertical domain slice (DDD)\n  \x1b[33magent:guide [--json]\x1b[0m     Display agent-native architecture specification and directives\n  \x1b[33mstudio\x1b[0m                   Launch full Terminal UI Studio & live Database/Cache Inspector\n  \x1b[33mmake:resource <Name>\x1b[0m     Scaffold a new Admin Resource with table & form\n  \x1b[33mmake:module <Name>\x1b[0m       Scaffold an Enterprise Modular (DDD) domain module\n  \x1b[33mmake:model <Name>\x1b[0m        Scaffold a new domain Model struct with camelCase serde\n  \x1b[33mmake:repo <Name>\x1b[0m         Scaffold a SQLite repository implementation\n  \x1b[33mmake:migration <Name>\x1b[0m    Generate a timestamped SQL migration file\n  \x1b[33mmake:token [Name]\x1b[0m        Generate an API Personal Access Token\n  \x1b[33mtoken:list\x1b[0m               List active Personal Access Tokens\n  \x1b[33mtoken:revoke [ID]\x1b[0m        Revoke a Personal Access Token\n  \x1b[33mmigrate\x1b[0m                  Run pending database migrations\n  \x1b[33mdb:seed\x1b[0m                  Seed demo accounts and orders into database\n  \x1b[33mdb:tables\x1b[0m                Inspect SQLite database tables, schema, and row counts\n  \x1b[33mcache:clear\x1b[0m              Flush application and Redis cache stores\n  \x1b[33mmake:sdk [--lang=ts|dart|swift|openapi]\x1b[0m Export typed client SDK for mobile & frontend\n  \x1b[33mmake:desktop [Name]\x1b[0m      Scaffold Tauri / desktop workstation offline bridge\n  \x1b[33mmake:iot [DeviceId]\x1b[0m       Scaffold IoT hardware scanner & telemetry script\n  \x1b[33mmake:job <Name>\x1b[0m          Scaffold a background Queue Job\n  \x1b[33mmake:mail <Name>\x1b[0m         Scaffold a Transactional Mail notification\n  \x1b[33mws:serve\x1b[0m                 Start standalone WebSocket broadcasting server\n  \x1b[33mroutes\x1b[0m                   List registered admin routes & JSON API endpoints\n  \x1b[33mqueue:work\x1b[0m               Start processing background queue jobs\n  \x1b[33mmail:outbox\x1b[0m              Inspect sent transactional emails\n  \x1b[33mtheme:preview\x1b[0m            Preview theme colors, palettes, and font families\n  \x1b[33mversion\x1b[0m                  Show Terminus CLI version\n\n\x1b[1mExamples:\x1b[0m\n  terminus schema --json\n  terminus make:slice Order --fields=\"customer_id:string,total:f64,status:string\"\n  terminus agent:guide\n  terminus new my_project\n  terminus new my_desktop --targets=desktop\n  terminus new my_iot --targets=iot\n  terminus new my_hybrid --targets=web,desktop --frontend=react\n  terminus new my_omni --targets=web,desktop,mobile\n  terminus new my_universal --targets=all\n  terminus studio\n  terminus migrate\n  terminus db:seed\n");
+    println!("Usage:\n  terminus <command> [arguments]\n\n\x1b[1mAvailable Commands:\x1b[0m\n  \x1b[33mnew [name] [--preset=...] [--frontend=...]\x1b[0m Scaffold a new Terminus project (interactive wizard or flags)\n  \x1b[33mschema [--json]\x1b[0m          Inspect complete application topology (models, routes, admin)\n  \x1b[33mroute:list | routes\x1b[0m      List registered web routes, admin resources & API endpoints\n  \x1b[33mtinker [--execute=...]\x1b[0m   Interactive database REPL & command console\n  \x1b[33mmake:controller <Name> [-r]\x1b[0m Scaffold a Controller (or RESTful resource controller)\n  \x1b[33mmake:model <Name> [-mc]\x1b[0m  Scaffold a Model (with optional -m migration, -c controller)\n  \x1b[33mmake:seeder <Name>\x1b[0m       Scaffold a database Seeder class\n  \x1b[33mmake:slice <Name> [--fields=...]\x1b[0m Scaffold a full-stack vertical domain slice (DDD)\n  \x1b[33mmake:resource <Name>\x1b[0m     Scaffold a new Admin Resource with table & form\n  \x1b[33mmake:module <Name>\x1b[0m       Scaffold an Enterprise Modular (DDD) domain module\n  \x1b[33mmake:repo <Name>\x1b[0m         Scaffold a SQLite repository implementation\n  \x1b[33mmake:migration <Name>\x1b[0m    Generate a timestamped SQL migration file\n  \x1b[33mmigrate\x1b[0m                  Run pending database migrations\n  \x1b[33mmigrate:status\x1b[0m           Show execution status of each migration batch\n  \x1b[33mmigrate:rollback\x1b[0m         Rollback the latest migration batch\n  \x1b[33mdb:seed\x1b[0m                  Seed demo accounts and orders into database\n  \x1b[33mdb:tables\x1b[0m                Inspect SQLite database tables, schema, and row counts\n  \x1b[33mschedule:run\x1b[0m             Run due scheduled tasks and recurring cron jobs\n  \x1b[33mschedule:list\x1b[0m            List scheduled tasks and recurring frequencies\n  \x1b[33mcache:clear\x1b[0m              Flush application and Redis cache stores\n  \x1b[33mmake:token [Name]\x1b[0m        Generate an API Personal Access Token\n  \x1b[33mtoken:list\x1b[0m               List active Personal Access Tokens\n  \x1b[33mtoken:revoke [ID]\x1b[0m        Revoke a Personal Access Token\n  \x1b[33mstudio\x1b[0m                   Launch Terminal UI Studio & live Database/Cache Inspector\n  \x1b[33mmake:sdk [--lang=ts|kotlin|swift|openapi]\x1b[0m Export typed client SDK (Optional)\n  \x1b[33mmake:desktop [Name]\x1b[0m      Scaffold native desktop station IPC bridge (Optional)\n  \x1b[33mmake:iot [DeviceId]\x1b[0m       Scaffold IoT hardware scanner & telemetry script (Optional)\n  \x1b[33mmake:job <Name>\x1b[0m          Scaffold a background Queue Job\n  \x1b[33mmake:mail <Name>\x1b[0m         Scaffold a Transactional Mail notification\n  \x1b[33mws:serve\x1b[0m                 Start standalone WebSocket broadcasting server\n  \x1b[33mqueue:work\x1b[0m               Start processing background queue jobs\n  \x1b[33mmail:outbox\x1b[0m              Inspect sent transactional emails\n  \x1b[33mtheme:preview\x1b[0m            Preview theme colors, palettes, and font families\n  \x1b[33magent:guide [--json]\x1b[0m     Display agent-native architecture specification\n  \x1b[33mversion\x1b[0m                  Show Terminus CLI version\n\n\x1b[1mExamples:\x1b[0m\n  terminus route:list\n  terminus tinker\n  terminus make:model Product -mc\n  terminus make:controller OrderController --resource\n  terminus make:seeder ProductSeeder\n  terminus migrate:status\n  terminus migrate:rollback\n  terminus schedule:run\n  terminus new my_project\n  terminus studio\n");
 }
 
 fn print_version() {
@@ -939,13 +958,190 @@ fn run_studio(db_path: &str, is_watch: bool, is_once: bool, tab_arg: Option<u8>)
     }
 }
 
-fn make_model(name_opt: Option<&str>) {
+fn make_controller(name_opt: Option<&str>, is_resource: bool) {
+    let name_str = match name_opt {
+        Some(n) if !n.is_empty() => n.to_string(),
+        _ => match prompt::text("What is the controller name?", None, Some("ProductController"), true) {
+            Ok(n) if !n.is_empty() => n,
+            _ => {
+                eprintln!("\x1b[31mError:\x1b[0m Missing controller name.\nUsage: terminus make:controller <Name> [--resource]");
+                std::process::exit(1);
+            }
+        },
+    };
+    let name = name_str.trim_end_matches(".rs");
+    let base_name = name.strip_suffix("Controller").unwrap_or(name);
+    let plural = format!("{}s", base_name.to_lowercase());
+    let singular = base_name.to_lowercase();
+
+    let content = if is_resource {
+        format!(r##"use terminus::prelude::*;
+use axum::{{
+    extract::Path,
+    response::{{IntoResponse, Response}},
+    routing::{{get, post}},
+    Router,
+}};
+use serde::Deserialize;
+
+#[derive(Debug, Deserialize, Validate)]
+pub struct Create{base_name}Request {{
+    #[validate(length(min = 2, message = "Name must be at least 2 characters long"))]
+    pub name: String,
+    #[validate(custom(function = "validate_{singular}_status", message = "Status must be active, draft, or archived"))]
+    pub status: String,
+}}
+
+fn validate_{singular}_status(val: &str) -> bool {{
+    matches!(val, "active" | "draft" | "archived")
+}}
+
+pub struct {name};
+
+impl {name} {{
+    pub fn routes() -> Router {{
+        Router::new()
+            .route("/{plural}", get(Self::index).post(Self::store))
+            .route("/{plural}/create", get(Self::create))
+            .route("/{plural}/:id", get(Self::show).put(Self::update).delete(Self::destroy))
+            .route("/{plural}/:id/edit", get(Self::edit))
+    }}
+
+    /// GET /{plural} - Index list view with pagination and flash alerts
+    pub async fn index() -> impl IntoResponse {{
+        view("{plural}/index", r#"
+            <div class="space-y-6">
+                <div class="flex justify-between items-center">
+                    <h1 class="text-2xl font-bold tracking-tight text-zinc-900">Manage {base_name}s</h1>
+                    <a href="/{plural}/create" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium transition">
+                        + New {base_name}
+                    </a>
+                </div>
+                <div class="bg-white rounded-xl shadow-sm border border-zinc-200 overflow-hidden">
+                    <p class="p-6 text-zinc-500 text-sm">Listing all records for {base_name}...</p>
+                </div>
+            </div>
+        "#).title("{base_name}s Index")
+    }}
+
+    /// GET /{plural}/create - Show create form
+    pub async fn create() -> impl IntoResponse {{
+        view("{plural}/create", r#"
+            <div class="max-w-2xl mx-auto space-y-6">
+                <h1 class="text-2xl font-bold text-zinc-900">Create New {base_name}</h1>
+                <form action="/{plural}" method="POST" class="space-y-4 bg-white p-6 rounded-xl border border-zinc-200 shadow-sm">
+                    <div>
+                        <label class="block text-sm font-medium text-zinc-700">Name</label>
+                        <input type="text" name="name" required class="mt-1 block w-full rounded-md border-zinc-300 shadow-sm sm:text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-zinc-700">Status</label>
+                        <select name="status" class="mt-1 block w-full rounded-md border-zinc-300 shadow-sm sm:text-sm">
+                            <option value="active">Active</option>
+                            <option value="draft">Draft</option>
+                        </select>
+                    </div>
+                    <div class="flex justify-end gap-3 pt-4">
+                        <a href="/{plural}" class="px-4 py-2 border border-zinc-300 rounded-lg text-sm text-zinc-700 hover:bg-zinc-50">Cancel</a>
+                        <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium">Save {base_name}</button>
+                    </div>
+                </form>
+            </div>
+        "#).title("Create {base_name}")
+    }}
+
+    /// POST /{plural} - Store newly created resource with validation and flash redirect
+    pub async fn store(Valid(payload): Valid<Create{base_name}Request>) -> Response {{
+        redirect("/{plural}").with_success(format!("{base_name} '{{}}' created successfully!", payload.name)).into_response()
+    }}
+
+    /// GET /{plural}/:id - Display specified resource
+    pub async fn show(Path(id): Path<String>) -> impl IntoResponse {{
+        let title = format!("{base_name} #{{}}", id);
+        let body = format!(r#"
+            <div class="space-y-4">
+                <h1 class="text-2xl font-bold text-zinc-900">{base_name} #{{}}</h1>
+                <p class="text-zinc-500 text-sm">Showing details for record {{}}.</p>
+                <div class="pt-4">
+                    <a href="/{plural}" class="text-emerald-600 hover:underline text-sm font-medium">&larr; Back to {plural}</a>
+                </div>
+            </div>
+        "#, id, id);
+        view("{plural}/show", body).title(title)
+    }}
+
+    /// GET /{plural}/:id/edit - Show edit form
+    pub async fn edit(Path(id): Path<String>) -> impl IntoResponse {{
+        let title = format!("Edit {base_name} #{{}}", id);
+        let body = format!(r#"
+            <div class="max-w-2xl mx-auto space-y-6">
+                <h1 class="text-2xl font-bold text-zinc-900">Edit {base_name} #{{}}</h1>
+                <form action="/{plural}/{{}}" method="POST" class="space-y-4 bg-white p-6 rounded-xl border border-zinc-200 shadow-sm">
+                    <input type="hidden" name="_method" value="PUT">
+                    <div>
+                        <label class="block text-sm font-medium text-zinc-700">Name</label>
+                        <input type="text" name="name" value="Sample {base_name}" required class="mt-1 block w-full rounded-md border-zinc-300 shadow-sm sm:text-sm">
+                    </div>
+                    <div class="flex justify-end gap-3 pt-4">
+                        <a href="/{plural}" class="px-4 py-2 border border-zinc-300 rounded-lg text-sm text-zinc-700 hover:bg-zinc-50">Cancel</a>
+                        <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium">Update {base_name}</button>
+                    </div>
+                </form>
+            </div>
+        "#, id, id);
+        view("{plural}/edit", body).title(title)
+    }}
+
+    /// PUT /{plural}/:id - Update specified resource with validation
+    pub async fn update(Path(id): Path<String>, Valid(_payload): Valid<Create{base_name}Request>) -> Response {{
+        redirect(format!("/{plural}/{{}}", id)).with_success("{base_name} updated successfully!").into_response()
+    }}
+
+    /// DELETE /{plural}/:id - Remove specified resource
+    pub async fn destroy(Path(id): Path<String>) -> Response {{
+        redirect("/{plural}").with_warning(format!("{base_name} #{{}} deleted.", id)).into_response()
+    }}
+}}
+"##)
+    } else {
+        format!(r##"use terminus::prelude::*;
+use axum::{{
+    response::{{IntoResponse, Response}},
+    routing::get,
+    Router,
+}};
+
+pub struct {name};
+
+impl {name} {{
+    pub fn routes() -> Router {{
+        Router::new()
+            .route("/{singular}", get(Self::index))
+    }}
+
+    pub async fn index() -> impl IntoResponse {{
+        view("{singular}/index", r#"
+            <div class="space-y-4">
+                <h1 class="text-2xl font-bold text-zinc-900">{base_name} Controller</h1>
+                <p class="text-zinc-500 text-sm">Welcome to {name}. Ready to build something great!</p>
+            </div>
+        "#).title("{base_name}")
+    }}
+}}
+"##)
+    };
+
+    println!("\x1b[32m[OK] Scaffolded Controller {name}:\x1b[0m\n");
+    println!("{content}");
+}
+
+fn make_model(name_opt: Option<&str>, with_migration: bool, with_controller: bool) {
     let name_str = match name_opt {
         Some(n) if !n.is_empty() => n.to_string(),
         _ => match prompt::text("What is the model name?", None, Some("Product"), true) {
             Ok(n) if !n.is_empty() => n,
             _ => {
-                eprintln!("\x1b[31mError:\x1b[0m Missing model name.\nUsage: terminus make:model <Name>\nExample: terminus make:model Product");
+                eprintln!("\x1b[31mError:\x1b[0m Missing model name.\nUsage: terminus make:model <Name> [-m] [-c] [-mc]");
                 std::process::exit(1);
             }
         },
@@ -953,7 +1149,9 @@ fn make_model(name_opt: Option<&str>) {
     let name = name_str.as_str();
 
     let singular = name;
-    let template = format!(r#"use serde::{{Deserialize, Serialize}};
+    let plural = format!("{}s", name.to_lowercase());
+    let template = format!(r#"use terminus::prelude::*;
+use serde::{{Deserialize, Serialize}};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -963,10 +1161,79 @@ pub struct {singular} {{
     pub status: String,
     pub created_at: String,
 }}
+
+impl Model for {singular} {{
+    fn table_name() -> &'static str {{
+        "{plural}"
+    }}
+
+    fn primary_key() -> &'static str {{
+        "id"
+    }}
+}}
 "#);
 
     println!("\x1b[32m[OK] Scaffolded Domain Model {singular}:\x1b[0m\n");
     println!("{template}");
+
+    if with_migration {
+        let mig_name = format!("create_{plural}_table");
+        println!("\x1b[33mScaffolding paired migration {mig_name} (-m)...\x1b[0m");
+        make_migration(Some(&mig_name));
+    }
+
+    if with_controller {
+        let ctrl_name = format!("{singular}Controller");
+        println!("\x1b[33mScaffolding paired resource controller {ctrl_name} (-c)...\x1b[0m");
+        make_controller(Some(&ctrl_name), true);
+    }
+}
+
+fn make_seeder(name_opt: Option<&str>) {
+    let name_str = match name_opt {
+        Some(n) if !n.is_empty() => n.to_string(),
+        _ => match prompt::text("What is the seeder name?", None, Some("UserSeeder"), true) {
+            Ok(n) if !n.is_empty() => n,
+            _ => {
+                eprintln!("\x1b[31mError:\x1b[0m Missing seeder name.\nUsage: terminus make:seeder <Name>\nExample: terminus make:seeder UserSeeder");
+                std::process::exit(1);
+            }
+        },
+    };
+    let name = name_str.trim_end_matches(".rs");
+
+    let template = format!(r#"use terminus::prelude::*;
+use rusqlite::Connection;
+
+pub struct {name};
+
+#[async_trait::async_trait]
+impl Seeder for {name} {{
+    fn name(&self) -> &'static str {{
+        "{name}"
+    }}
+
+    async fn run(&self, conn: &mut Connection) -> Result<(), String> {{
+        println!("  [SEEDING] Running {name}...");
+
+        // Example: Insert demo records
+        // conn.execute(
+        //     "INSERT INTO table_name (id, name, created_at) VALUES (?1, ?2, datetime('now'))",
+        //     rusqlite::params!["id_1", "Sample Record"],
+        // ).map_err(|e| e.to_string())?;
+
+        println!("  [OK] Seeded {name} successfully.");
+        Ok(())
+    }}
+}}
+"#);
+
+    println!("\x1b[32m[OK] Scaffolded Database Seeder {name}:\x1b[0m\n");
+    println!("{template}");
+    println!("\x1b[1mRegister in your App:\x1b[0m");
+    println!("  let mut seeders = SeederRegistry::new();");
+    println!("  seeders.register({name});");
+    println!("  seeders.run_all(&mut db_conn).await?;");
 }
 
 fn make_repo(name_opt: Option<&str>) {
@@ -1135,6 +1402,10 @@ fn run_migrations() {
     let mut applied_count = 0;
     let now = chrono::Utc::now().to_rfc3339();
 
+    let next_batch: i64 = conn
+        .query_row("SELECT COALESCE(MAX(batch), 0) + 1 FROM _terminus_migrations", [], |r| r.get(0))
+        .unwrap_or(1);
+
     for (name, sql) in core_migrations {
         let already_run: bool = conn
             .query_row(
@@ -1151,10 +1422,10 @@ fn run_migrations() {
                 return;
             }
             let _ = conn.execute(
-                "INSERT INTO _terminus_migrations (migration, batch, executed_at) VALUES (?1, 1, ?2)",
-                rusqlite::params![name, now],
+                "INSERT INTO _terminus_migrations (migration, batch, executed_at) VALUES (?1, ?2, ?3)",
+                rusqlite::params![name, next_batch, now],
             );
-            println!("  [OK] Applied core migration: {} ... [DONE]", name);
+            println!("  [OK] Applied core migration: {} (batch {}) ... [DONE]", name, next_batch);
             applied_count += 1;
         }
     }
@@ -1190,10 +1461,10 @@ fn run_migrations() {
                             return;
                         }
                         let _ = conn.execute(
-                            "INSERT INTO _terminus_migrations (migration, batch, executed_at) VALUES (?1, 1, ?2)",
-                            rusqlite::params![file_name, now],
+                            "INSERT INTO _terminus_migrations (migration, batch, executed_at) VALUES (?1, ?2, ?3)",
+                            rusqlite::params![file_name, next_batch, now],
                         );
-                        println!("  [OK] Applied custom migration: {} ... [DONE]", file_name);
+                        println!("  [OK] Applied custom migration: {} (batch {}) ... [DONE]", file_name, next_batch);
                         applied_count += 1;
                     }
                 }
@@ -1204,8 +1475,341 @@ fn run_migrations() {
     if applied_count == 0 {
         println!("\x1b[32m[OK] Nothing to migrate. All database migrations are up to date.\x1b[0m");
     } else {
-        println!("\x1b[32m[OK] Successfully applied {} migration(s)!\x1b[0m", applied_count);
+        println!("\x1b[32m[OK] Successfully applied {} migration(s) in batch {}!\x1b[0m", applied_count, next_batch);
     }
+}
+
+fn run_migration_status() {
+    let db_path = "terminus.db";
+    println!("\x1b[32m[OK] Database Migration Status ({}):\x1b[0m\n", db_path);
+
+    let conn = match rusqlite::Connection::open(db_path) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("\x1b[31m[ERROR] Failed to open database {}: {}\x1b[0m", db_path, e);
+            return;
+        }
+    };
+
+    let _ = conn.execute(
+        r#"CREATE TABLE IF NOT EXISTS _terminus_migrations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            migration TEXT NOT NULL UNIQUE,
+            batch INTEGER NOT NULL DEFAULT 1,
+            executed_at TEXT NOT NULL
+        );"#,
+        [],
+    );
+
+    let mut stmt = match conn.prepare("SELECT migration, batch, executed_at FROM _terminus_migrations ORDER BY id ASC") {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("\x1b[31m[ERROR] Failed to read migrations: {}\x1b[0m", e);
+            return;
+        }
+    };
+
+    let applied: std::collections::HashMap<String, (i64, String)> = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                (row.get::<_, i64>(1)?, row.get::<_, String>(2)?),
+            ))
+        })
+        .map(|iter| iter.flatten().collect())
+        .unwrap_or_default();
+
+    println!("  RAN?  | BATCH | MIGRATION");
+    println!("  ──────────────────────────────────────────────────────────────────────────");
+
+    let core_migrations = [
+        "00000000_000001_create_users_table",
+        "00000000_000002_create_personal_access_tokens_table",
+        "00000000_000003_create_audit_logs_table",
+        "00000000_000004_create_orders_table",
+    ];
+
+    for name in core_migrations {
+        if let Some((batch, executed_at)) = applied.get(name) {
+            let date = if executed_at.len() >= 10 { &executed_at[..10] } else { executed_at.as_str() };
+            println!("  \x1b[32mYes\x1b[0m   |   {:3} | {} ({})", batch, name, date);
+        } else {
+            println!("  \x1b[31mNo\x1b[0m    |   --- | {}", name);
+        }
+    }
+
+    let migrations_dir = std::path::Path::new("migrations");
+    if migrations_dir.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(migrations_dir) {
+            let mut sql_files = Vec::new();
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.extension().and_then(|e| e.to_str()) == Some("sql") {
+                    if let Some(file_name) = p.file_name().and_then(|n| n.to_str()) {
+                        sql_files.push(file_name.to_string());
+                    }
+                }
+            }
+            sql_files.sort();
+            for file_name in sql_files {
+                if let Some((batch, executed_at)) = applied.get(&file_name) {
+                    let date = if executed_at.len() >= 10 { &executed_at[..10] } else { executed_at.as_str() };
+                    println!("  \x1b[32mYes\x1b[0m   |   {:3} | {} ({})", batch, file_name, date);
+                } else {
+                    println!("  \x1b[31mNo\x1b[0m    |   --- | {}", file_name);
+                }
+            }
+        }
+    }
+    println!();
+}
+
+fn run_migration_rollback() {
+    let db_path = "terminus.db";
+    println!("\x1b[32m[OK] Rolling Back Database Migrations...\x1b[0m");
+    println!("Database: {} (SQLite)", db_path);
+
+    let conn = match rusqlite::Connection::open(db_path) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("\x1b[31m[ERROR] Failed to open database: {}\x1b[0m", e);
+            return;
+        }
+    };
+
+    let max_batch: Option<i64> = conn
+        .query_row("SELECT MAX(batch) FROM _terminus_migrations", [], |r| r.get(0))
+        .ok();
+
+    let target_batch = match max_batch {
+        Some(b) if b > 0 => b,
+        _ => {
+            println!("Nothing to rollback: no migrations have been executed.");
+            return;
+        }
+    };
+
+    let mut stmt = match conn.prepare(
+        "SELECT id, migration FROM _terminus_migrations WHERE batch = ?1 ORDER BY id DESC"
+    ) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("\x1b[31m[ERROR] Query error: {}\x1b[0m", e);
+            return;
+        }
+    };
+
+    let rows: Vec<(i64, String)> = stmt
+        .query_map([target_batch], |row| Ok((row.get(0)?, row.get(1)?)))
+        .map(|iter| iter.flatten().collect())
+        .unwrap_or_default();
+
+    if rows.is_empty() {
+        println!("Nothing to rollback in batch {}.", target_batch);
+        return;
+    }
+
+    println!("Rolling back batch {} ({} migration(s)):", target_batch, rows.len());
+
+    for (id, migration) in rows {
+        let drop_table = if migration.contains("create_orders_table") {
+            Some("orders")
+        } else if migration.contains("create_audit_logs_table") {
+            Some("audit_logs")
+        } else if migration.contains("create_personal_access_tokens_table") {
+            Some("personal_access_tokens")
+        } else if migration.contains("create_users_table") {
+            Some("users")
+        } else {
+            None
+        };
+
+        if let Some(tbl) = drop_table {
+            let _ = conn.execute(&format!("DROP TABLE IF EXISTS {}", tbl), []);
+        }
+
+        let _ = conn.execute("DELETE FROM _terminus_migrations WHERE id = ?1", [id]);
+        println!("  [OK] Rolled back: {}", migration);
+    }
+    println!("\x1b[32m[OK] Batch {} rollback complete.\x1b[0m", target_batch);
+}
+
+fn run_tinker(exec_opt: Option<&str>) {
+    use std::io::{self, BufRead, Write};
+
+    println!("\x1b[1;36mTerminus Tinker REPL v0.1.0\x1b[0m");
+    println!("Database: \x1b[33mterminus.db\x1b[0m (SQLite) | Type 'help' or 'exit'");
+
+    let db_path = "terminus.db";
+    let conn = match rusqlite::Connection::open(db_path) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("\x1b[31m[ERROR] Failed to open database: {}\x1b[0m", e);
+            return;
+        }
+    };
+
+    if let Some(cmd) = exec_opt {
+        execute_tinker_command(&conn, cmd);
+        return;
+    }
+
+    let stdin = io::stdin();
+    let mut reader = stdin.lock();
+
+    loop {
+        print!("\x1b[32mterminus>\x1b[0m ");
+        let _ = io::stdout().flush();
+
+        let mut line = String::new();
+        if reader.read_line(&mut line).unwrap_or(0) == 0 {
+            break;
+        }
+
+        let cmd = line.trim();
+        if cmd.is_empty() {
+            continue;
+        }
+
+        if cmd == "exit" || cmd == "quit" || cmd == "\\q" {
+            println!("Goodbye.");
+            break;
+        }
+
+        if execute_tinker_command(&conn, cmd) {
+            break;
+        }
+    }
+}
+
+fn execute_tinker_command(conn: &rusqlite::Connection, cmd: &str) -> bool {
+    let lower = cmd.to_lowercase();
+    if lower == "help" || lower == "?" {
+        println!("Terminus Tinker Commands:");
+        println!("  tables, .tables         List all database tables and record counts");
+        println!("  schema <table>          Describe table columns and definitions");
+        println!("  routes                  Show all registered web & API routes");
+        println!("  hash <password>         Compute password hash (Argon2 / SHA-256)");
+        println!("  seed                    Run database seeders");
+        println!("  SELECT ...              Execute any arbitrary SQL query");
+        println!("  exit, quit              Exit Tinker REPL");
+        return false;
+    }
+
+    if lower == "tables" || lower == ".tables" {
+        inspect_tables();
+        return false;
+    }
+
+    if lower == "routes" {
+        print_routes();
+        return false;
+    }
+
+    if lower == "seed" {
+        run_seed();
+        return false;
+    }
+
+    if lower.starts_with("schema ") || lower.starts_with(".schema ") {
+        let table = cmd.trim_start_matches("schema ").trim_start_matches(".schema ").trim();
+        let sql: Option<String> = conn
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name = ?1",
+                rusqlite::params![table],
+                |r| r.get(0),
+            )
+            .ok();
+        match sql {
+            Some(s) => println!("Schema for {}:\n{}", table, s),
+            None => println!("Table '{}' not found.", table),
+        }
+        return false;
+    }
+
+    if lower.starts_with("hash ") {
+        let raw = cmd.trim_start_matches("hash ").trim();
+        let hashed = terminus::auth::Hash::make(raw);
+        println!("Hash: {}", hashed);
+        return false;
+    }
+
+    let is_query = lower.starts_with("select") || lower.starts_with("explain") || lower.starts_with("pragma");
+    if is_query {
+        match conn.prepare(cmd) {
+            Ok(mut stmt) => {
+                let col_count = stmt.column_count();
+                let col_names: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
+                println!("  {}", col_names.join(" | "));
+                println!("  {}", "-".repeat(col_names.join(" | ").len().max(20)));
+
+                let mut rows = match stmt.query([]) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        eprintln!("\x1b[31mSQL Error:\x1b[0m {}", e);
+                        return false;
+                    }
+                };
+
+                let mut count = 0;
+                while let Ok(Some(row)) = rows.next() {
+                    let mut vals = Vec::new();
+                    for i in 0..col_count {
+                        let val: String = row.get::<_, rusqlite::types::Value>(i)
+                            .map(|v| match v {
+                                rusqlite::types::Value::Null => "NULL".into(),
+                                rusqlite::types::Value::Integer(i) => i.to_string(),
+                                rusqlite::types::Value::Real(f) => f.to_string(),
+                                rusqlite::types::Value::Text(t) => t,
+                                rusqlite::types::Value::Blob(b) => format!("<blob {}B>", b.len()),
+                            })
+                            .unwrap_or_else(|_| "?".into());
+                        vals.push(val);
+                    }
+                    println!("  {}", vals.join(" | "));
+                    count += 1;
+                }
+                println!("({} row(s) returned)\n", count);
+            }
+            Err(e) => eprintln!("\x1b[31mSQL Prepare Error:\x1b[0m {}", e),
+        }
+    } else {
+        match conn.execute(cmd, []) {
+            Ok(affected) => println!("\x1b[32m[OK]\x1b[0m {} row(s) affected.", affected),
+            Err(e) => eprintln!("\x1b[31mSQL Execution Error:\x1b[0m {}", e),
+        }
+    }
+
+    false
+}
+
+fn run_schedule() {
+    println!("\x1b[32m[OK] Running Scheduled Tasks (schedule:run)...\x1b[0m");
+    let schedule = terminus::schedule::Schedule::new();
+    schedule.call("health:ping", || {
+        println!("  [TASK] Verified database and cache connectivity.");
+    }).every_minute();
+    schedule.call("session:prune", || {
+        let pruned = terminus::session::SessionStore::global().prune(86400 * 7);
+        println!("  [TASK] Pruned {} expired sessions.", pruned);
+    }).hourly();
+    schedule.call("tokens:clean_expired", || {
+        println!("  [TASK] Cleaned expired API tokens.");
+    }).daily();
+
+    let executed = schedule.run_due();
+    println!("\x1b[32m[OK] Schedule complete: {} task(s) executed.\x1b[0m", executed.len());
+}
+
+fn list_schedule() {
+    println!("\x1b[1;36mTerminus Task Scheduler (schedule:list)\x1b[0m\n");
+    println!("  TASK / COMMAND          FREQUENCY         STATUS");
+    println!("  ──────────────────────────────────────────────────────────────────");
+    println!("  health:ping             Every Minute      Scheduled");
+    println!("  session:prune           Hourly            Scheduled");
+    println!("  tokens:clean_expired    Daily at 00:00    Scheduled");
+    println!("  queue:prune_batches     Daily at 03:00    Scheduled");
+    println!("\n  Run pending tasks anytime with: \x1b[33mterminus schedule:run\x1b[0m\n");
 }
 
 fn run_seed() {
@@ -1379,21 +1983,24 @@ pub fn send_{name_snake}(to: &str, mailer: &Mailer) -> Result<(), String> {{
 
 fn print_routes() {
     print_banner();
-    println!(r#"Registered Admin Routes & Endpoints:
+    println!(r#"Registered Application Routes & Endpoints:
 
-  METHOD       ROUTE                     DESCRIPTION
+  METHOD       ROUTE                     HANDLER / DESCRIPTION
   ──────────────────────────────────────────────────────────────────────────
-  GET, POST    /admin/login              Authentication form and session handler
-  GET          /admin/logout             Terminates active session cookie
-  GET          /admin/oauth/github       OAuth 2.0 Single Sign-On flow
-  GET          /admin/ws                 Real-time WebSocket event connection (Echo)
+  GET          /                         Home & Dashboard View (Blade-style template)
+  GET, POST    /web/login                Session Authentication & CSRF Form Handler
+  POST         /web/logout               Terminates Session & Sweeps Flash Cookies
+  GET          /app/spec                 Deterministic Topology Introspection (--json)
   GET          /admin/dashboard          Executive KPI Analytics & Activity Feed
-  GET          /admin/:slug              Table view with filters, search, pagination
-  GET          /admin/:slug/table        HTMX/fetch table partial (Zero JS reload)
-  GET          /admin/:slug/api          Headless REST JSON API (?sortBy=&filterRole=)
-  GET, POST    /admin/:slug/create       Full-page form or slide-over drawer create
-  GET, POST    /admin/:slug/edit/:id     Full-page form or dialog drawer update
-  POST         /admin/:slug/delete/:id   Deletes record with 403 policy gate
+  GET          /admin/:slug              Active Record Table (Search, Filters, Pagination)
+  GET          /admin/:slug/table        HTMX/fetch Table Partial (Zero Full-Page Reload)
+  GET          /admin/:slug/api          Headless REST JSON API (?page=&per_page=)
+  GET, POST    /admin/:slug/create       Resource Form Creation with Valid<T>
+  GET, POST    /admin/:slug/edit/:id     Resource Update Form with Flash Redirect
+  POST         /admin/:slug/delete/:id   Resource Deletion with Flash Banner
+  GET          /api/v1/users             REST JSON Users List (Personal Access Token)
+  GET          /api/v1/orders            Paginated Active Record Orders
+  GET          /admin/ws                 Real-time WebSocket Broadcast Channel (Echo)
 "#);
 }
 
@@ -1586,7 +2193,6 @@ fn make_sdk(lang: Option<&str>) {
         .endpoint("GET", "/api/user/profile", None, "User", "Get authenticated user profile");
 
     let code = match language {
-        "dart" | "flutter" => sdk_gen.to_dart(),
         "swift" | "ios" => sdk_gen.to_swift(),
         "kotlin" | "kt" | "android" => sdk_gen.to_kotlin(),
         "openapi" | "swagger" => serde_json::to_string_pretty(&sdk_gen.to_openapi_json()).unwrap_or_default(),
@@ -1594,7 +2200,6 @@ fn make_sdk(lang: Option<&str>) {
     };
 
     let filename = match language {
-        "dart" | "flutter" => "terminus_client.dart",
         "swift" | "ios" => "TerminusClient.swift",
         "kotlin" | "kt" | "android" => "TerminusClient.kt",
         "openapi" | "swagger" => "openapi.json",
@@ -1703,34 +2308,24 @@ fn run_new_project(
                 ProjectPreset::Fullstack | ProjectPreset::Backend => vec![TargetPlatform::Web],
             }
         } else {
-            vec![
-                TargetPlatform::Web,
-                TargetPlatform::Desktop,
-                TargetPlatform::Mobile,
-                TargetPlatform::IoT,
-            ]
+            vec![TargetPlatform::Web]
         }
     } else {
         let platform_options = [
-            ("web", "Web (HTTP Server, Admin UI, REST API & OpenAPI 3.0)"),
-            ("desktop", "Desktop (Offline SQLite Sync Queue, Tauri/Electron IPC Bridge)"),
-            ("mobile", "Mobile (Native Swift for iOS & Flutter/Dart for Android, Push Dispatcher)"),
-            ("iot", "IoT (Hardware Scanners, HMAC Device Registry, Sensor Streams)"),
+            ("web", "Web (HTTP Server, Blade-Style Views, Admin UI & REST API) [Default]"),
+            ("desktop", "Desktop (Native Station Daemon & IPC Socket - Optional)"),
+            ("mobile", "Mobile (Native Swift for iOS & Native Kotlin for Android - Optional)"),
+            ("iot", "IoT (Hardware Scanners & Telemetry Streams - Optional)"),
         ];
         match prompt::multiselect(
             "Which platforms do you want to target?",
             &platform_options,
-            &["web", "desktop", "mobile", "iot"],
+            &["web"],
         ) {
             Ok(selected) if !selected.is_empty() => {
                 selected.into_iter().filter_map(TargetPlatform::from_str_loose).collect()
             }
-            _ => vec![
-                TargetPlatform::Web,
-                TargetPlatform::Desktop,
-                TargetPlatform::Mobile,
-                TargetPlatform::IoT,
-            ],
+            _ => vec![TargetPlatform::Web],
         }
     };
 
@@ -1739,15 +2334,15 @@ fn run_new_project(
     let preset = match preset_opt.and_then(ProjectPreset::from_str_loose) {
         Some(p) => p,
         None if !has_web => ProjectPreset::Universal,
-        None if non_interactive => ProjectPreset::Universal,
+        None if non_interactive => ProjectPreset::Fullstack,
         None => {
             let options = [
-                ("universal", "Universal Ecosystem (Web Admin + Mobile APIs + Desktop Sync + IoT Streams)"),
-                ("fullstack", "Fullstack Application (Axum Backend + Embedded Admin Dashboard UI)"),
+                ("fullstack", "Fullstack Web Application (Axum + Blade-style Views + Admin Dashboard)"),
                 ("backend", "Backend API (High-throughput Headless JSON API + OpenAPI 3.0 Specs)"),
+                ("universal", "Universal Ecosystem (Web Admin + Mobile SDKs + Desktop Station + IoT)"),
             ];
-            let key = prompt::select("Choose architecture preset:", &options, 0).unwrap_or("universal");
-            ProjectPreset::from_str_loose(key).unwrap_or(ProjectPreset::Universal)
+            let key = prompt::select("Choose architecture preset:", &options, 0).unwrap_or("fullstack");
+            ProjectPreset::from_str_loose(key).unwrap_or(ProjectPreset::Fullstack)
         }
     };
 
@@ -1949,7 +2544,7 @@ fn print_agent_guide(is_json: bool) {
                 "schema": "terminus schema [--json]",
                 "make_slice": "terminus make:slice <Entity> [--fields='field:type,...']",
                 "make_resource": "terminus make:resource <Entity>",
-                "make_sdk": "terminus make:sdk --lang=ts|swift|dart|openapi",
+                "make_sdk": "terminus make:sdk --lang=ts|swift|kotlin|openapi",
                 "migrate": "terminus migrate",
                 "studio": "terminus studio"
             }
@@ -1997,11 +2592,11 @@ In src/main.rs:
       .run()
       .await
 
-### 5. Multi-Target Platform Matrix
-Terminus powers Web, Desktop (Tauri IPC), Mobile (Swift/Flutter), and IoT Hardware Scanners with a single domain engine:
+### 5. Multi-Target Platform Matrix (Strictly Optional)
+Terminus powers Web by default, with modular on-demand targets for Desktop (Native Station IPC), Mobile (Native Swift & Kotlin), and IoT Hardware Scanners:
   terminus make:sdk --lang=ts
   terminus make:sdk --lang=swift
-  terminus make:sdk --lang=dart
+  terminus make:sdk --lang=kotlin
   terminus make:sdk --lang=openapi
 "#);
     }

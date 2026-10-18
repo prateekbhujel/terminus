@@ -10,15 +10,18 @@ use chrono::{DateTime, Utc};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use crate::domain::User;
+use crate::session::{Session, SessionStore};
 
 tokio::task_local! {
     pub static TASK_USER: Option<User>;
     pub static TASK_REQUEST: Option<RequestInfo>;
+    pub static TASK_SESSION: Option<Session>;
 }
 
 thread_local! {
     static THREAD_USER: RefCell<Option<User>> = const { RefCell::new(None) };
     static THREAD_REQUEST: RefCell<Option<RequestInfo>> = const { RefCell::new(None) };
+    static THREAD_SESSION: RefCell<Option<Session>> = const { RefCell::new(None) };
 }
 
 static GLOBAL_USER: OnceLock<RwLock<Option<User>>> = OnceLock::new();
@@ -29,6 +32,11 @@ fn global_user() -> &'static RwLock<Option<User>> {
 static GLOBAL_REQUEST: OnceLock<RwLock<Option<RequestInfo>>> = OnceLock::new();
 fn global_request() -> &'static RwLock<Option<RequestInfo>> {
     GLOBAL_REQUEST.get_or_init(|| RwLock::new(None))
+}
+
+static GLOBAL_SESSION: OnceLock<RwLock<Option<Session>>> = OnceLock::new();
+fn global_session() -> &'static RwLock<Option<Session>> {
+    GLOBAL_SESSION.get_or_init(|| RwLock::new(None))
 }
 
 static CONFIG_STORE: OnceLock<RwLock<HashMap<String, String>>> = OnceLock::new();
@@ -241,6 +249,45 @@ where
     let result = f();
     THREAD_USER.with(|c| *c.borrow_mut() = prev);
     result
+}
+
+/// Returns the currently active `Session` across task, thread, or global scope.
+pub fn session() -> Session {
+    if let Ok(Some(s)) = TASK_SESSION.try_with(|s| s.clone()) {
+        return s;
+    }
+    if let Some(s) = THREAD_SESSION.with(|c| c.borrow().clone()) {
+        return s;
+    }
+    if let Some(s) = global_session().read().ok().and_then(|s| s.clone()) {
+        return s;
+    }
+    let s = SessionStore::global().get_or_create(None);
+    set_current_session(Some(s.clone()));
+    s
+}
+
+/// Sets the current `Session` for the active thread and global scope.
+pub fn set_current_session(sess: Option<Session>) {
+    THREAD_SESSION.with(|c| *c.borrow_mut() = sess.clone());
+    if let Ok(mut g) = global_session().write() {
+        *g = sess;
+    }
+}
+
+/// Flashes a one-time message into the active session for the next web request.
+pub fn flash(key: impl Into<String>, msg: impl Into<String>) {
+    session().flash(key, msg);
+}
+
+/// Flashes a success notification into the active session.
+pub fn flash_success(msg: impl Into<String>) {
+    session().flash_success(msg);
+}
+
+/// Flashes an error notification into the active session.
+pub fn flash_error(msg: impl Into<String>) {
+    session().flash_error(msg);
 }
 
 /// Primary authorization check: determines if the current authenticated user can perform an action.
@@ -496,11 +543,78 @@ macro_rules! abort_unless {
     };
 }
 
-pub use axum::response::Redirect;
+/// Fluent redirect response supporting Laravel-style chained flash messages (`redirect("/posts").with("success", "Saved!")`).
+#[derive(Debug, Clone)]
+pub struct RedirectResponse {
+    pub url: String,
+    pub status: StatusCode,
+    pub flash: Option<(String, String)>,
+}
 
-/// Fluent redirect helper returning an HTTP 303/302 Redirect response
-pub fn redirect(to_url: impl AsRef<str>) -> Redirect {
-    Redirect::to(to_url.as_ref())
+impl RedirectResponse {
+    pub fn to(url: impl Into<String>) -> Self {
+        Self {
+            url: url.into(),
+            status: StatusCode::SEE_OTHER,
+            flash: None,
+        }
+    }
+
+    /// Chains a one-time flash notification to be rendered on the redirected page.
+    pub fn with(mut self, key: impl Into<String>, msg: impl Into<String>) -> Self {
+        self.flash = Some((key.into(), msg.into()));
+        self
+    }
+
+    /// Convenience helper to chain a success notification.
+    pub fn with_success(self, msg: impl Into<String>) -> Self {
+        self.with("success", msg)
+    }
+
+    /// Convenience helper to chain an error notification.
+    pub fn with_error(self, msg: impl Into<String>) -> Self {
+        self.with("error", msg)
+    }
+
+    /// Convenience helper to chain a warning notification.
+    pub fn with_warning(self, msg: impl Into<String>) -> Self {
+        self.with("warning", msg)
+    }
+
+    /// Convenience helper to chain an informational notification.
+    pub fn with_info(self, msg: impl Into<String>) -> Self {
+        self.with("info", msg)
+    }
+}
+
+impl IntoResponse for RedirectResponse {
+    fn into_response(self) -> Response {
+        let session = session();
+        if let Some((k, v)) = self.flash {
+            session.flash(k, v);
+        }
+        let mut headers = axum::http::HeaderMap::new();
+        if let Ok(val) = axum::http::HeaderValue::from_str(&self.url) {
+            headers.insert(axum::http::header::LOCATION, val);
+        }
+        if let Ok(val) = axum::http::HeaderValue::from_str(&session.cookie_header()) {
+            headers.insert(axum::http::header::SET_COOKIE, val);
+        }
+        (self.status, headers, "").into_response()
+    }
+}
+
+impl From<RedirectResponse> for axum::response::Redirect {
+    fn from(r: RedirectResponse) -> Self {
+        axum::response::Redirect::to(&r.url)
+    }
+}
+
+pub type Redirect = RedirectResponse;
+
+/// Fluent redirect helper returning an HTTP 303 Redirect response with optional flash chaining.
+pub fn redirect(to_url: impl AsRef<str>) -> RedirectResponse {
+    RedirectResponse::to(to_url.as_ref())
 }
 
 /// Standard Terminus Result type for controller handlers returning AbortError on failure by default

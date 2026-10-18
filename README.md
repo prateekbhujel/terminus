@@ -321,6 +321,90 @@ let app = App::new().port(9000); // Custom port
 app.run().await
 ```
 
+### 5. Blade-Style Views, Sessions & One-Time Flash Messages
+
+Render fullstack web views wrapped in responsive Tailwind layouts, with automatic CSRF tokens, flash alert banners, and seamless redirects:
+
+```rust
+use terminus::prelude::*;
+
+// 1. Return a web view with Tailwind layout & flash banner
+pub async fn index() -> impl IntoResponse {
+    view("Dashboard", r#"
+        <div class="space-y-6">
+            <h1 class="text-2xl font-bold text-zinc-100">Welcome to Terminus Web</h1>
+            <p class="text-zinc-400">Zero frontend build step needed. High-converting SSR.</p>
+        </div>
+    "#)
+}
+
+// 2. Redirect with chained flash notifications
+pub async fn store(Valid(payload): Valid<CreateUserRequest>) -> Response {
+    // Save to database...
+    redirect("/users")
+        .with_success("Account created successfully!")
+        .into_response()
+}
+```
+
+### 6. Active Record Pagination (`Paginated<T>`)
+
+Paginate database query results with zero boilerplate:
+
+```rust
+// Paginate query (page 1, 15 per page)
+let paginated: Paginated<RowData> = db::query!("SELECT * FROM orders ORDER BY created_at DESC")
+    .paginate(1, 15)
+    .await?;
+
+// Output accessible Tailwind CSS pagination buttons & page range indicators
+let html_links = paginated.links_html("/orders");
+// Renders: "Showing 1 to 15 of 142 results" with Previous / Page / Next buttons
+```
+
+### 7. Interactive Tinker REPL (`terminus tinker`)
+
+Explore your application, test SQL queries, inspect database schemas, and hash passwords interactively from your terminal:
+
+```bash
+$ terminus tinker
+Terminus Tinker REPL v0.1.0
+Database: terminus.db (SQLite) | Type 'help' or 'exit'
+
+terminus> tables
+  TABLE NAME                     COLUMNS       ROWS
+  ──────────────────────────────────────────────────────
+  users                                7          4
+  orders                               6          4
+  _terminus_migrations                 4          4
+
+terminus> SELECT id, customer_name, total_cents FROM orders;
+  id | customer_name | total_cents
+  --------------------------------
+  1  | Acme Logistics| 25000
+  2  | Global Corp   | 49900
+(2 row(s) returned)
+
+terminus> hash my_secret_password
+Hash: $argon2id$v=19$m=19456,t=2,p=1$...
+```
+
+### 8. In-Process Task Scheduling (`terminus schedule:run`)
+
+Define background recurring tasks directly in Rust without external cron daemons:
+
+```rust
+let schedule = Schedule::new();
+
+schedule.call("cleanup:sessions", || {
+    SessionStore::global().prune(86400 * 7);
+}).hourly();
+
+schedule.call("orders:sync", || {
+    // Background order processing...
+}).every_five_minutes();
+```
+
 ---
 
 ## Admin Panel Resources
@@ -471,20 +555,28 @@ terminus <command> [options]
 
 | Command | Description |
 |---|---|
-| `new [name] [--targets=...]` | Scaffold a new project (interactive wizard or flags) |
+| `new [name] [--preset=...]` | Scaffold a new project (interactive wizard or flags) |
 | `schema [--json]` | Inspect application topology (models, routes, admin resources) |
+| `route:list \| routes` | List registered web routes, admin resources, and API endpoints |
+| `tinker [--execute=...]` | Interactive database REPL console with query and command evaluation |
+| `make:controller <Name> [-r]` | Scaffold a web controller (or RESTful resource controller) |
+| `make:model <Name> [-mc]` | Scaffold a model with paired migration (-m) and controller (-c) |
+| `make:seeder <Name>` | Scaffold a database seeder class |
 | `make:slice <Name> [--fields=...]` | Scaffold a self-contained vertical domain slice |
 | `agent:guide [--json]` | Display AI agent conventions and architecture directives |
 | `studio` | Launch terminal UI telemetry dashboard and database inspector |
 | `make:resource <Name>` | Scaffold an administrative resource |
 | `make:module <Name>` | Scaffold a domain module |
-| `make:model <Name>` | Scaffold a domain model struct |
 | `make:repo <Name>` | Scaffold a SQLite repository implementation |
 | `make:migration <Name>` | Generate a timestamped SQL migration file |
 | `migrate` | Run pending database migrations |
+| `migrate:status` | Show execution status of each migration batch |
+| `migrate:rollback` | Rollback the latest batch of executed database migrations |
 | `db:tables` | Inspect database schema and statistics |
-| `db:seed` | Seed demo records into database |
-| `make:sdk [--lang=ts\|swift\|dart]` | Export typed client SDKs |
+| `db:seed` | Seed demo accounts and data into database |
+| `schedule:run` | Execute due scheduled tasks and recurring in-process cron jobs |
+| `schedule:list` | List scheduled tasks and recurring execution frequencies |
+| `make:sdk [--lang=ts\|kotlin\|swift\|openapi]` | Export typed client SDKs (Optional) |
 | `make:token [name]` | Issue a personal access token |
 | `token:list` | List active access tokens |
 | `token:revoke [id]` | Revoke an access token |
@@ -492,15 +584,16 @@ terminus <command> [options]
 
 ---
 
-## Modular Extensions (Multi-Platform Matrix)
+## Modular Extensions (Strictly Optional Multi-Platform Matrix)
 
-For teams building client touchpoints, Terminus provides scaffoldable adapters connecting to the single Rust domain core:
+While Terminus defaults strictly to a pure Fullstack Web application, it provides scaffoldable native adapters connecting directly to your Rust domain engine:
 
-- **Desktop Bridge (`--targets=desktop`)**: Tauri/Electron IPC bridge with an offline SQLite sync queue (`/api/desktop/sync`).
+- **Desktop Station Daemon (`--targets=desktop`)**: Native Rust workstation daemon (`desktop/station.rs`) with sub-millisecond cold boot and direct IPC socket communication.
+- **Native Android SDK (`make:sdk --lang=kotlin`)**: Native Kotlin data classes, Coroutines (`suspend fun`), and `Dispatchers.IO` network client.
+- **Native iOS SDK (`make:sdk --lang=swift`)**: Native Swift 5.9+ data structs and `async`/`await` URLSession client.
 - **IoT Hardware Gateway (`--targets=iot`)**: HMAC-SHA256 authenticated barcode scanner & sensor telemetry scripts.
-- **Mobile Push & SDKs (`--targets=mobile`)**: Push notification dispatchers (APNs/FCM) and typed Swift/Dart client SDK generators.
 
-These are modular client bindings, keeping your core Rust backend clean and focused.
+These are modular client bindings generated only on demand, keeping your web backend lean and uncluttered.
 
 ---
 

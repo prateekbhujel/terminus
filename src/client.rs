@@ -1,6 +1,6 @@
 //! Multi-Platform Engine: Mobile (Android/iOS), IoT & Desktop
 //!
-//! Provides active platform adapters, typed SDK code generation (TypeScript & Dart),
+//! Provides active platform adapters, typed SDK code generation (TypeScript, Swift & Kotlin),
 //! offline transaction sync queues for desktop POS/warehouse stations,
 //! hardware HMAC device registration for IoT barcode/RFID scanners,
 //! and push notification dispatchers.
@@ -156,7 +156,7 @@ pub struct SdkEndpoint {
     pub description: String,
 }
 
-/// Automatic Typed Client SDK Generator (TypeScript & Dart)
+/// Automatic Typed Client SDK Generator (TypeScript, Swift & Kotlin)
 #[derive(Debug, Clone)]
 pub struct SdkGenerator {
     pub app_name: String,
@@ -284,37 +284,6 @@ impl SdkGenerator {
 
         ts.push_str("}\n");
         ts
-    }
-
-    /// Generate clean Dart/Flutter Client SDK
-    pub fn to_dart(&self) -> String {
-        let mut dart = format!("// Terminus Client SDK for {}\n// Generated automatically by Terminus Framework.\n\n", self.app_name);
-        dart.push_str("import 'dart:convert';\nimport 'package:http/http.dart' as http;\n\n");
-        
-        // Export Client Class
-        dart.push_str(&format!(
-            r#"class {}Client {{
-  final String baseUrl;
-  String? token;
-
-  {}Client({{this.baseUrl = "http://127.0.0.1:3000", this.token}});
-
-  Map<String, String> _headers() {{
-    final headers = <String, String>{{
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-    }};
-    if (token != null) {{
-      headers['Authorization'] = 'Bearer $token';
-    }}
-    return headers;
-  }}
-}}
-"#,
-            self.app_name.replace(' ', ""),
-            self.app_name.replace(' ', "")
-        ));
-        dart
     }
 
     /// Generate clean, native Swift 5.9+ Client SDK (iOS, iPadOS, macOS)
