@@ -26,7 +26,7 @@ pub fn render_page(
     );
 
     for res in resources {
-        if !res.canView(user) {
+        if !res.can_view(user) {
             continue;
         }
 

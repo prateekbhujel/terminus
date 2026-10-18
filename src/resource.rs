@@ -127,7 +127,6 @@ impl RowData {
     }
 }
 
-#[allow(non_snake_case)]
 pub trait Resource: Send + Sync {
     fn name(&self) -> &str;
     fn plural_name(&self) -> &str;
@@ -169,116 +168,43 @@ pub trait Resource: Send + Sync {
     // =========================================================================
 
     /// Resource-level view permission
-    #[allow(non_snake_case)]
-    fn canView(&self, user: &crate::domain::User) -> bool {
+    fn can_view(&self, user: &crate::domain::User) -> bool {
         user.can(&format!("{}.view", self.slug()))
     }
 
-    fn can_view(&self, user: &crate::domain::User) -> bool {
-        self.canView(user)
-    }
-
     /// Resource-level create permission
-    #[allow(non_snake_case)]
-    fn canCreate(&self, user: &crate::domain::User) -> bool {
+    fn can_create(&self, user: &crate::domain::User) -> bool {
         user.can(&format!("{}.create", self.slug()))
     }
 
-    fn can_create(&self, user: &crate::domain::User) -> bool {
-        self.canCreate(user)
-    }
-
     /// Resource-level edit permission
-    #[allow(non_snake_case)]
-    fn canEdit(&self, user: &crate::domain::User) -> bool {
+    fn can_edit(&self, user: &crate::domain::User) -> bool {
         user.can(&format!("{}.edit", self.slug()))
     }
 
-    fn can_edit(&self, user: &crate::domain::User) -> bool {
-        self.canEdit(user)
-    }
-
     /// Resource-level delete permission
-    #[allow(non_snake_case)]
-    fn canDelete(&self, user: &crate::domain::User) -> bool {
+    fn can_delete(&self, user: &crate::domain::User) -> bool {
         user.can(&format!("{}.delete", self.slug()))
     }
 
-    fn can_delete(&self, user: &crate::domain::User) -> bool {
-        self.canDelete(user)
-    }
-
     /// Record-level view authorization
-    #[allow(non_snake_case)]
-    fn canViewRow(&self, user: &crate::domain::User, row: &RowData) -> bool {
-        let _ = row;
-        self.canView(user)
-    }
-
     fn can_view_row(&self, user: &crate::domain::User, row: &RowData) -> bool {
-        self.canViewRow(user, row)
+        let _ = row;
+        self.can_view(user)
     }
 
     /// Record-level edit authorization
     /// Enables conditional row actions, locking records based on status or ownership.
-    #[allow(non_snake_case)]
-    fn canEditRow(&self, user: &crate::domain::User, row: &RowData) -> bool {
-        let _ = row;
-        self.canEdit(user)
-    }
-
     fn can_edit_row(&self, user: &crate::domain::User, row: &RowData) -> bool {
-        self.canEditRow(user, row)
+        let _ = row;
+        self.can_edit(user)
     }
 
     /// Record-level delete authorization
     /// Enables protecting critical records (e.g. active superadmin, paid invoice).
-    #[allow(non_snake_case)]
-    fn canDeleteRow(&self, user: &crate::domain::User, row: &RowData) -> bool {
-        let _ = row;
-        self.canDelete(user)
-    }
-
     fn can_delete_row(&self, user: &crate::domain::User, row: &RowData) -> bool {
-        self.canDeleteRow(user, row)
-    }
-
-    // =====================================================================
-    // Fluent camelCase Aliases
-    // =====================================================================
-    #[allow(non_snake_case)]
-    fn pluralName(&self) -> &str {
-        self.plural_name()
-    }
-
-    #[allow(non_snake_case)]
-    fn formMode(&self) -> FormMode {
-        self.form_mode()
-    }
-
-    #[allow(non_snake_case)]
-    fn fetchRows(&self, query: &QueryState) -> (Vec<RowData>, usize) {
-        self.fetch_rows(query)
-    }
-
-    #[allow(non_snake_case)]
-    fn getRow(&self, id: &str) -> Option<RowData> {
-        self.get_row(id)
-    }
-
-    #[allow(non_snake_case)]
-    fn createRow(&self, values: HashMap<String, String>) -> Result<String, String> {
-        self.create_row(values)
-    }
-
-    #[allow(non_snake_case)]
-    fn updateRow(&self, id: &str, values: HashMap<String, String>) -> Result<(), String> {
-        self.update_row(id, values)
-    }
-
-    #[allow(non_snake_case)]
-    fn deleteRow(&self, id: &str) -> Result<(), String> {
-        self.delete_row(id)
+        let _ = row;
+        self.can_delete(user)
     }
 
     /// Replicate action hook: duplicates record with cloned attributes
@@ -294,24 +220,13 @@ pub trait Resource: Send + Sync {
         self.create_row(values)
     }
 
-    #[allow(non_snake_case)]
-    fn replicateRow(&self, id: &str) -> Result<String, String> {
-        self.replicate_row(id)
-    }
-
     /// Policy hook governing whether a record can be duplicated
-    #[allow(non_snake_case)]
-    fn canReplicateRow(&self, user: &crate::domain::User, row: &RowData) -> bool {
-        self.canCreate(user) && self.canEditRow(user, row)
-    }
-
     fn can_replicate_row(&self, user: &crate::domain::User, row: &RowData) -> bool {
-        self.canReplicateRow(user, row)
+        self.can_create(user) && self.can_edit_row(user, row)
     }
 
-    #[allow(non_snake_case)]
-    fn canReplicate(&self, user: &crate::domain::User) -> bool {
-        self.canCreate(user)
+    fn can_replicate(&self, user: &crate::domain::User) -> bool {
+        self.can_create(user)
     }
 
     /// Batch delete action hook
@@ -323,11 +238,6 @@ pub trait Resource: Send + Sync {
             }
         }
         Ok(count)
-    }
-
-    #[allow(non_snake_case)]
-    fn bulkDelete(&self, ids: &[String]) -> Result<usize, String> {
-        self.bulk_delete(ids)
     }
 
     /// Rust High-Performance Streaming Exporter (CSV & JSON)
@@ -371,11 +281,6 @@ pub trait Resource: Send + Sync {
         Ok(csv)
     }
 
-    #[allow(non_snake_case)]
-    fn bulkExport(&self, ids: &[String], format: &str) -> Result<String, String> {
-        self.bulk_export(ids, format)
-    }
-
     /// Custom row action dispatcher
     fn handle_action(&self, action_id: &str, record_id: &str) -> Result<String, String> {
         match action_id {
@@ -387,22 +292,12 @@ pub trait Resource: Send + Sync {
         }
     }
 
-    #[allow(non_snake_case)]
-    fn handleAction(&self, action_id: &str, record_id: &str) -> Result<String, String> {
-        self.handle_action(action_id, record_id)
-    }
-
     /// Custom bulk action dispatcher
     fn handle_bulk_action(&self, action_id: &str, record_ids: &[String]) -> Result<String, String> {
         match action_id {
             "delete" => self.bulk_delete(record_ids).map(|c| format!("Deleted {} records", c)),
             _ => Err(format!("Bulk action `{}` not handled by resource", action_id)),
         }
-    }
-
-    #[allow(non_snake_case)]
-    fn handleBulkAction(&self, action_id: &str, record_ids: &[String]) -> Result<String, String> {
-        self.handle_bulk_action(action_id, record_ids)
     }
 }
 
@@ -451,7 +346,7 @@ impl Resource for AuditLogResource {
             ]))
             .column(crate::table::Column::text("recordId").label("Target ID").searchable())
             .column(crate::table::Column::text("details").label("Change Summary").searchable())
-            .pageSize(8)
+            .page_size(8)
     }
 
     fn fetch_rows(&self, query: &QueryState) -> (Vec<RowData>, usize) {
@@ -473,23 +368,19 @@ impl Resource for AuditLogResource {
     }
 
     // Immutable system audit trail policy: Superadmin / Founder only, no manual write/mutation
-    #[allow(non_snake_case)]
-    fn canView(&self, user: &crate::domain::User) -> bool {
+    fn can_view(&self, user: &crate::domain::User) -> bool {
         user.can("audit.view")
     }
 
-    #[allow(non_snake_case)]
-    fn canCreate(&self, _user: &crate::domain::User) -> bool {
+    fn can_create(&self, _user: &crate::domain::User) -> bool {
         false
     }
 
-    #[allow(non_snake_case)]
-    fn canEdit(&self, _user: &crate::domain::User) -> bool {
+    fn can_edit(&self, _user: &crate::domain::User) -> bool {
         false
     }
 
-    #[allow(non_snake_case)]
-    fn canDelete(&self, _user: &crate::domain::User) -> bool {
+    fn can_delete(&self, _user: &crate::domain::User) -> bool {
         false
     }
 }

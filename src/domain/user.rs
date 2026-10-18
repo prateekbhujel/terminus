@@ -311,21 +311,11 @@ impl User {
         res
     }
 
-    #[allow(non_snake_case)]
-    pub fn canCached(&self, permission: &str, cache: &PermissionCache) -> bool {
-        self.can_cached(permission, cache)
-    }
-
     pub fn give_permission_to(&mut self, perm: impl Into<String>) -> &mut Self {
         let p = perm.into();
         self.denied_permissions.remove(&p);
         self.direct_permissions.insert(p);
         self
-    }
-
-    #[allow(non_snake_case)]
-    pub fn givePermissionTo(&mut self, perm: impl Into<String>) -> &mut Self {
-        self.give_permission_to(perm)
     }
 
     pub fn deny_permission(&mut self, perm: impl Into<String>) -> &mut Self {
@@ -335,19 +325,9 @@ impl User {
         self
     }
 
-    #[allow(non_snake_case)]
-    pub fn denyPermission(&mut self, perm: impl Into<String>) -> &mut Self {
-        self.deny_permission(perm)
-    }
-
     pub fn revoke_permission_to(&mut self, perm: &str) -> &mut Self {
         self.direct_permissions.remove(perm);
         self
-    }
-
-    #[allow(non_snake_case)]
-    pub fn revokePermissionTo(&mut self, perm: &str) -> &mut Self {
-        self.revoke_permission_to(perm)
     }
 
     pub fn remove_deny(&mut self, perm: &str) -> &mut Self {
@@ -355,45 +335,20 @@ impl User {
         self
     }
 
-    #[allow(non_snake_case)]
-    pub fn removeDeny(&mut self, perm: &str) -> &mut Self {
-        self.remove_deny(perm)
-    }
-
     pub fn has_direct_permission(&self, perm: &str) -> bool {
         self.direct_permissions.iter().any(|p| matches_permission(p, perm))
-    }
-
-    #[allow(non_snake_case)]
-    pub fn hasDirectPermission(&self, perm: &str) -> bool {
-        self.has_direct_permission(perm)
     }
 
     pub fn has_explicit_deny(&self, perm: &str) -> bool {
         self.denied_permissions.iter().any(|p| matches_permission(p, perm))
     }
 
-    #[allow(non_snake_case)]
-    pub fn hasExplicitDeny(&self, perm: &str) -> bool {
-        self.has_explicit_deny(perm)
-    }
-
     pub fn has_any_permission(&self, perms: &[&str]) -> bool {
         perms.iter().any(|&p| self.can(p))
     }
 
-    #[allow(non_snake_case)]
-    pub fn hasAnyPermission(&self, perms: &[&str]) -> bool {
-        self.has_any_permission(perms)
-    }
-
     pub fn has_all_permissions(&self, perms: &[&str]) -> bool {
         perms.iter().all(|&p| self.can(p))
-    }
-
-    #[allow(non_snake_case)]
-    pub fn hasAllPermissions(&self, perms: &[&str]) -> bool {
-        self.has_all_permissions(perms)
     }
 
     pub fn assign_role(&mut self, role: Role) -> &mut Self {
@@ -401,18 +356,8 @@ impl User {
         self
     }
 
-    #[allow(non_snake_case)]
-    pub fn assignRole(&mut self, role: Role) -> &mut Self {
-        self.assign_role(role)
-    }
-
     pub fn has_role(&self, role: &Role) -> bool {
         &self.role == role
-    }
-
-    #[allow(non_snake_case)]
-    pub fn hasRole(&self, role: &Role) -> bool {
-        self.has_role(role)
     }
 
     pub fn is_superadmin(&self) -> bool {

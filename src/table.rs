@@ -60,11 +60,6 @@ impl Column {
         }
     }
 
-    #[allow(non_snake_case)]
-    pub fn dateTime(name: impl Into<String>) -> Self {
-        Self::date_time(name)
-    }
-
     pub fn image(name: impl Into<String>) -> Self {
         let name = name.into();
         Self {
@@ -172,22 +167,12 @@ impl Action {
             .color("zinc")
     }
 
-    #[allow(non_snake_case)]
-    pub fn makeView() -> Self {
-        Self::view()
-    }
-
     /// Prebuilt Edit Action
     pub fn edit() -> Self {
         Self::make("edit")
             .label("Edit")
             .icon("pencil")
             .color("zinc")
-    }
-
-    #[allow(non_snake_case)]
-    pub fn makeEdit() -> Self {
-        Self::edit()
     }
 
     /// Prebuilt Delete Action
@@ -201,11 +186,6 @@ impl Action {
             .modal_description("Are you sure you want to delete this record? This action cannot be undone.")
     }
 
-    #[allow(non_snake_case)]
-    pub fn makeDelete() -> Self {
-        Self::delete()
-    }
-
     /// Prebuilt Replicate Action (Duplicate record)
     pub fn replicate() -> Self {
         Self::make("replicate")
@@ -215,11 +195,6 @@ impl Action {
             .requires_confirmation(true)
             .modal_heading("Duplicate Record")
             .modal_description("A duplicate of this record will be created with cloned attributes.")
-    }
-
-    #[allow(non_snake_case)]
-    pub fn makeReplicate() -> Self {
-        Self::replicate()
     }
 
     pub fn label(mut self, label: impl Into<String>) -> Self {
@@ -253,19 +228,9 @@ impl Action {
         self
     }
 
-    #[allow(non_snake_case)]
-    pub fn requiresConfirmation(self) -> Self {
-        self.requires_confirmation(true)
-    }
-
     pub fn modal_heading(mut self, heading: impl Into<String>) -> Self {
         self.modal_heading = Some(heading.into());
         self
-    }
-
-    #[allow(non_snake_case)]
-    pub fn modalHeading(self, heading: impl Into<String>) -> Self {
-        self.modal_heading(heading)
     }
 
     pub fn modal_description(mut self, desc: impl Into<String>) -> Self {
@@ -273,19 +238,9 @@ impl Action {
         self
     }
 
-    #[allow(non_snake_case)]
-    pub fn modalDescription(self, desc: impl Into<String>) -> Self {
-        self.modal_description(desc)
-    }
-
     pub fn action_url(mut self, url: impl Into<String>) -> Self {
         self.action_url = Some(url.into());
         self
-    }
-
-    #[allow(non_snake_case)]
-    pub fn actionUrl(self, url: impl Into<String>) -> Self {
-        self.action_url(url)
     }
 }
 
@@ -327,22 +282,12 @@ impl BulkAction {
             .modal_description("Are you sure you want to permanently delete all selected records?")
     }
 
-    #[allow(non_snake_case)]
-    pub fn makeDelete() -> Self {
-        Self::delete()
-    }
-
     /// Prebuilt Streaming Export Bulk Action
     pub fn export() -> Self {
         Self::make("export")
             .label("Export CSV")
             .icon("download")
             .color("emerald")
-    }
-
-    #[allow(non_snake_case)]
-    pub fn makeExport() -> Self {
-        Self::export()
     }
 
     pub fn label(mut self, label: impl Into<String>) -> Self {
@@ -365,29 +310,14 @@ impl BulkAction {
         self
     }
 
-    #[allow(non_snake_case)]
-    pub fn requiresConfirmation(self) -> Self {
-        self.requires_confirmation(true)
-    }
-
     pub fn modal_heading(mut self, heading: impl Into<String>) -> Self {
         self.modal_heading = Some(heading.into());
         self
     }
 
-    #[allow(non_snake_case)]
-    pub fn modalHeading(self, heading: impl Into<String>) -> Self {
-        self.modal_heading(heading)
-    }
-
     pub fn modal_description(mut self, desc: impl Into<String>) -> Self {
         self.modal_description = Some(desc.into());
         self
-    }
-
-    #[allow(non_snake_case)]
-    pub fn modalDescription(self, desc: impl Into<String>) -> Self {
-        self.modal_description(desc)
     }
 }
 
@@ -480,19 +410,9 @@ impl Table {
         self
     }
 
-    #[allow(non_snake_case)]
-    pub fn bulkAction(self, action: BulkAction) -> Self {
-        self.bulk_action(action)
-    }
-
     pub fn bulk_actions(mut self, actions: Vec<BulkAction>) -> Self {
         self.bulk_actions = actions;
         self
-    }
-
-    #[allow(non_snake_case)]
-    pub fn bulkActions(self, actions: Vec<BulkAction>) -> Self {
-        self.bulk_actions(actions)
     }
 
     pub fn filter(mut self, filter: TableFilter) -> Self {
@@ -525,19 +445,9 @@ impl Table {
         self
     }
 
-    #[allow(non_snake_case)]
-    pub fn pageSize(self, size: usize) -> Self {
-        self.page_size(size)
-    }
-
     pub fn default_sort_by(mut self, sort_by: impl Into<String>) -> Self {
         self.default_sort_by = Some(sort_by.into());
         self
-    }
-
-    #[allow(non_snake_case)]
-    pub fn defaultSortBy(self, sort_by: impl Into<String>) -> Self {
-        self.default_sort_by(sort_by)
     }
 
     pub fn empty_state_heading(mut self, heading: impl Into<String>) -> Self {
@@ -545,19 +455,9 @@ impl Table {
         self
     }
 
-    #[allow(non_snake_case)]
-    pub fn emptyStateHeading(self, heading: impl Into<String>) -> Self {
-        self.empty_state_heading(heading)
-    }
-
     pub fn empty_state_description(mut self, desc: impl Into<String>) -> Self {
         self.empty_state_description = Some(desc.into());
         self
-    }
-
-    #[allow(non_snake_case)]
-    pub fn emptyStateDescription(self, desc: impl Into<String>) -> Self {
-        self.empty_state_description(desc)
     }
 }
 

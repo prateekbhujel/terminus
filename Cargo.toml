@@ -3,14 +3,14 @@ name = "terminus-framework"
 version = "0.1.0"
 edition = "2021"
 authors = ["Pratik <prateekbhujelpb@gmail.com>"]
-description = "Terminus — The universal fullstack application framework for Rust and Axum powering web, mobile APIs, desktop, and IoT."
+description = "Terminus — High-performance, batteries-included web and API application framework for Rust and Axum."
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/prateekbhujel/terminus"
 homepage = "https://github.com/prateekbhujel/terminus"
 documentation = "https://docs.rs/terminus-framework"
-keywords = ["framework", "fullstack", "web", "mobile", "axum"]
-categories = ["web-programming::http-server", "command-line-utilities", "database", "gui", "development-tools"]
+keywords = ["framework", "fullstack", "web", "axum", "orm"]
+categories = ["web-programming::http-server", "command-line-utilities", "database", "development-tools"]
 
 [lib]
 name = "terminus"

@@ -1,12 +1,11 @@
 //! Universal Commerce & Warehouse Logistics Hub (Terminus Example)
 //!
-//! Demonstrates the Terminus multi-platform foundation:
+//! Demonstrates the Terminus batteries-included application foundation:
 //! - 1 shared domain: Orders, Inventory, Products, and Warehouse Bins
-//! - Web Admin Panel & Customer API
-//! - Mobile push notification delivery & TypeScript SDK export
-//! - Desktop workstation offline sync queue with automatic conflict resolution
-//! - IoT handheld barcode scanner gun ingestion with HMAC verification
-//! - Instant PDF invoice and Excel inventory report generation
+//! - Web Admin Panel & REST API
+//! - Persistent SQLite Job Queue & Cache
+//! - Transactional Mail with pluggable transports
+//! - TypeScript SDK generator & OpenAPI 3.0 contract export
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -144,7 +143,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ]));
 
     // 2. Client SDK & OpenAPI Specification
-    let push_dispatcher = PushDispatcher::new();
     let sdk_gen = SdkGenerator::new("Terminus Logistics", "2.1.0")
         .type_schema("WmsItem", vec![
             ("sku", "string"),
@@ -159,37 +157,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let openapi_json = sdk_gen.to_openapi_json();
     println!("  [OpenAPI 3.0] Exported OpenAPI specification ({} endpoints)", openapi_json["paths"].as_object().map(|p| p.len()).unwrap_or(0));
 
-    // Trigger push notification upon item pack
-    let notification = PushNotification::new("Order Update", "SKU KB-9002-RGB packed and verified at Dock 3", "fcm_token_alice")
-        .with_data("sku", "KB-9002-RGB");
-    push_dispatcher.enqueue(notification);
-    let delivered = push_dispatcher.deliver_all();
-    println!("  [Push Dispatcher] Delivered push alerts: {:?}", delivered);
+    // 3. Persistent SQLite Cache & Job Queue
+    let cache = SqliteCache::new("terminus.db")?;
+    cache.put("wms:status", "operational", Some(3600));
+    let cached_status = cache.get("wms:status").unwrap_or_default();
+    println!("  [Cache] Persistent SQLite cache operational status: {}", cached_status);
 
-    // 5. Document Engine: Instant PDF Invoice & Excel Report
-    let pdf = PdfDocument::new("DISPATCH BILL OF LADING #8910")
-        .company("Terminus Central Fulfillment", "Logistics Park, Gateway 4")
-        .recipient("Metro Superstore Logistics", "400 Commerce Way")
-        .table(
-            vec!["SKU", "Description", "Bin", "Qty", "Amount"],
-            vec![
-                vec!["KB-9002-RGB", "Industrial Keyboard", "A-01-01", "10", "$1,899.90"],
-                vec!["SC-4001-LASER", "Laser Scanner Gun", "B-04-12", "5", "$1,247.50"],
-            ],
-        )
-        .total("$3,147.40")
-        .notes("Verified by Terminus Hardware Scanner. Ready for freight pickup.");
+    let queue = SqliteJobQueue::new("terminus.db")?;
+    let job_id = queue.push("wms:dispatch_order", r#"{"orderId":"ORD-8910","sku":"KB-9002-RGB"}"#)?;
+    println!("  [Queue] Enqueued dispatch job: {}", job_id);
 
-    let pdf_bytes = pdf.to_pdf_bytes();
-    println!("  [Document Engine] Compiled valid PDF Bill of Lading ({} bytes)", pdf_bytes.len());
+    // 4. Transactional Mailer
+    let mailer = Mailer::new();
+    let message = MailMessage::to("customer@example.com")
+        .subject("Order #8910 Dispatch Confirmed")
+        .line("Your order #8910 has been packed and scheduled for dispatch.")
+        .action("Track Shipment", "https://logistics.example.com/orders/8910");
+    mailer.send(message)?;
+    println!("  [Mailer] Sent notification email (mailbox size: {})", mailer.sent_messages().len());
 
-    let mut excel = ExcelDocument::new("Warehouse Inventory")
-        .headers(vec!["SKU", "Title", "Bin Location", "In Stock", "Unit Price"]);
-    excel.add_row(vec!["KB-9002-RGB", "Industrial Mechanical Keyboard", "A-01-01", "48", "$189.99"]);
-    excel.add_row(vec!["SC-4001-LASER", "Rugged Bluetooth 2D Scanner Gun", "B-04-12", "120", "$249.50"]);
-    println!("  [Document Engine] Generated Excel CSV ({} bytes) and XML ({} bytes)", excel.to_csv().len(), excel.to_excel_xml().len());
-
-    // 6. Build the Terminus Web Application
+    // 5. Build the Terminus Web Application
     let inv_resource = InventoryResource { items: inventory_items };
     let admin = AdminPanel::new()
         .brand_name("Terminus Logistics")

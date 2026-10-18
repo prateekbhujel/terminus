@@ -1,48 +1,9 @@
 //! Authentication & Webhook Integrations
 //!
-//! Provides Passkeys / WebAuthn, OAuth social authentication (GitHub, Google),
-//! and cryptographic webhook verification for external integrations.
+//! Provides OAuth social authentication URL builders (GitHub, Google, custom)
+//! and cryptographic HMAC-SHA256 webhook verification for external integrations.
 
 use serde::{Deserialize, Serialize};
-
-/// WebAuthn / Passkey Credential Registration Request
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PasskeyChallenge {
-    pub challenge: String,
-    pub user_id: String,
-    pub relying_party: String,
-    pub user_name: String,
-    pub timeout_ms: u64,
-}
-
-impl PasskeyChallenge {
-    /// Generate a fresh challenge for passkey registration
-    pub fn generate(user_id: &str, user_name: &str, rp_id: &str) -> Self {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis();
-        let challenge = format!("passkey_challenge_{}_{}", user_id, now);
-        Self {
-            challenge,
-            user_id: user_id.to_string(),
-            relying_party: rp_id.to_string(),
-            user_name: user_name.to_string(),
-            timeout_ms: 60000,
-        }
-    }
-}
-
-/// Registered Passkey Credential record
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PasskeyCredential {
-    pub id: String,
-    pub user_id: String,
-    pub public_key: String,
-    pub counter: u32,
-    pub created_at: String,
-}
 
 /// OAuth Social Provider configurations
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -76,15 +37,11 @@ impl OAuthProvider {
 pub struct WebhookVerifier;
 
 impl WebhookVerifier {
-    /// Verify standard signature header (e.g. `t=...,v1=...`, `sha256=...`, or raw HMAC-SHA256 hex)
+    /// Verify standard signature header (e.g. `t=...,v1=...`, `sha256=...`, or raw HMAC-SHA256 hex).
+    /// Performs strictly constant-time verification to prevent timing attacks.
     pub fn verify_signature(payload: &str, signature: &str, secret: &str) -> bool {
         if signature.trim().is_empty() || secret.trim().is_empty() {
             return false;
-        }
-
-        // Check test or simulated signatures
-        if signature.starts_with("test") || signature == "mock_signature" || signature.contains("sig_hash") {
-            return true;
         }
 
         // 1. Stripe / GitHub timestamped signature format: `t=123456,v1=hex...`

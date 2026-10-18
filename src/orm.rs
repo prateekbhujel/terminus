@@ -281,19 +281,9 @@ impl<M: Model> ModelQuery<M> {
         self
     }
 
-    #[allow(non_snake_case)]
-    pub fn whereEq(self, col: impl Into<String>, val: impl Into<String>) -> Self {
-        self.where_eq(col, val)
-    }
-
     pub fn where_neq(mut self, col: impl Into<String>, val: impl Into<String>) -> Self {
         self.wheres.push((col.into(), "!=".to_string(), val.into()));
         self
-    }
-
-    #[allow(non_snake_case)]
-    pub fn whereNeq(self, col: impl Into<String>, val: impl Into<String>) -> Self {
-        self.where_neq(col, val)
     }
 
     pub fn where_gt(mut self, col: impl Into<String>, val: impl Into<String>) -> Self {
@@ -301,19 +291,9 @@ impl<M: Model> ModelQuery<M> {
         self
     }
 
-    #[allow(non_snake_case)]
-    pub fn whereGt(self, col: impl Into<String>, val: impl Into<String>) -> Self {
-        self.where_gt(col, val)
-    }
-
     pub fn where_lt(mut self, col: impl Into<String>, val: impl Into<String>) -> Self {
         self.wheres.push((col.into(), "<".to_string(), val.into()));
         self
-    }
-
-    #[allow(non_snake_case)]
-    pub fn whereLt(self, col: impl Into<String>, val: impl Into<String>) -> Self {
-        self.where_lt(col, val)
     }
 
     pub fn where_like(mut self, col: impl Into<String>, pattern: impl Into<String>) -> Self {
@@ -321,19 +301,9 @@ impl<M: Model> ModelQuery<M> {
         self
     }
 
-    #[allow(non_snake_case)]
-    pub fn whereLike(self, col: impl Into<String>, pattern: impl Into<String>) -> Self {
-        self.where_like(col, pattern)
-    }
-
     pub fn order_by(mut self, col: impl Into<String>, dir: &str) -> Self {
         self.order_by = Some((col.into(), dir.to_uppercase()));
         self
-    }
-
-    #[allow(non_snake_case)]
-    pub fn orderBy(self, col: impl Into<String>, dir: &str) -> Self {
-        self.order_by(col, dir)
     }
 
     pub fn limit(mut self, limit: usize) -> Self {
@@ -1048,6 +1018,85 @@ impl Database {
     {
         let mut conn = self.conn.lock().unwrap();
         f(&mut conn)
+    }
+
+    /// Execute a closure inside a SQLite transaction with automatic rollback on error
+    pub fn transaction<F, R>(&self, f: F) -> Result<R, String>
+    where
+        F: FnOnce(&rusqlite::Transaction) -> Result<R, String>,
+    {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
+        let res = f(&tx)?;
+        tx.commit().map_err(|e| e.to_string())?;
+        Ok(res)
+    }
+
+    /// Ensure the internal migration tracking table exists
+    pub fn ensure_migrations_table(&self) -> Result<(), rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS _terminus_migrations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                batch INTEGER NOT NULL,
+                applied_at TEXT NOT NULL
+            )",
+            [],
+        )?;
+        Ok(())
+    }
+
+    /// Retrieve list of all applied migrations (name, batch, applied_at)
+    pub fn applied_migrations(&self) -> Result<Vec<(String, i64, String)>, rusqlite::Error> {
+        self.ensure_migrations_table()?;
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT name, batch, applied_at FROM _terminus_migrations ORDER BY id ASC")?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        let mut list = Vec::new();
+        for row in rows {
+            list.push(row?);
+        }
+        Ok(list)
+    }
+
+    /// Get the highest migration batch number
+    pub fn latest_batch(&self) -> Result<i64, rusqlite::Error> {
+        self.ensure_migrations_table()?;
+        let conn = self.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT COALESCE(MAX(batch), 0) FROM _terminus_migrations",
+            [],
+            |r| r.get(0),
+        )
+    }
+
+    /// Record a newly executed migration into the tracking table
+    pub fn record_migration(&self, name: &str, batch: i64) -> Result<(), rusqlite::Error> {
+        self.ensure_migrations_table()?;
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO _terminus_migrations (name, batch, applied_at) VALUES (?1, ?2, ?3)",
+            rusqlite::params![name, batch, now],
+        )?;
+        Ok(())
+    }
+
+    /// Roll back all migrations in the latest batch and return their names
+    pub fn rollback_latest_batch(&self) -> Result<Vec<String>, rusqlite::Error> {
+        self.ensure_migrations_table()?;
+        let batch = self.latest_batch()?;
+        if batch == 0 {
+            return Ok(Vec::new());
+        }
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT name FROM _terminus_migrations WHERE batch = ?1")?;
+        let names: Vec<String> = stmt.query_map(rusqlite::params![batch], |r| r.get(0))?
+            .filter_map(|r| r.ok())
+            .collect();
+        conn.execute("DELETE FROM _terminus_migrations WHERE batch = ?1", rusqlite::params![batch])?;
+        Ok(names)
     }
 
     /// Execute a raw SQL statement

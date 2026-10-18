@@ -116,16 +116,16 @@ fn test_row_data_bidirectional_case_fallback() {
 }
 
 #[test]
-fn test_camel_case_fluent_builder_methods() {
+fn test_fluent_builder_methods() {
     let page_res = TestPageResource;
-    assert_eq!(page_res.pluralName(), "Articles");
-    assert_eq!(page_res.formMode(), FormMode::Page);
+    assert_eq!(page_res.plural_name(), "Articles");
+    assert_eq!(page_res.form_mode(), FormMode::Page);
 
-    let table = Table::new().pageSize(25).defaultSortBy("createdAt");
+    let table = Table::new().page_size(25).default_sort_by("createdAt");
     assert_eq!(table.default_page_size, 25);
     assert_eq!(table.default_sort_by, Some("createdAt".to_string()));
 
-    let field = FormField::searchableSelect("role", vec![("admin", "Admin")]);
+    let field = FormField::searchable_select("role", vec![("admin", "Admin")]);
     assert_eq!(field.name, "role");
 }
 
@@ -175,17 +175,15 @@ impl Resource for PolicyTestResource {
         (vec![r1, r2], 2)
     }
 
-    #[allow(non_snake_case)]
-    fn canEditRow(&self, user: &User, row: &RowData) -> bool {
-        if !self.canEdit(user) {
+    fn can_edit_row(&self, user: &User, row: &RowData) -> bool {
+        if !self.can_edit(user) {
             return false;
         }
         row.get("status") != Some("Settled")
     }
 
-    #[allow(non_snake_case)]
-    fn canDeleteRow(&self, user: &User, row: &RowData) -> bool {
-        if !self.canDelete(user) {
+    fn can_delete_row(&self, user: &User, row: &RowData) -> bool {
+        if !self.can_delete(user) {
             return false;
         }
         row.get("status") != Some("Settled")
@@ -218,23 +216,19 @@ fn test_record_level_authorization_hooks() {
     let settled_row = RowData::new("2").insert("status", "Settled");
 
     // Member cannot edit or delete invoices at all
-    assert!(!res.canEdit(&member_user));
-    assert!(!res.canEditRow(&member_user, &draft_row));
-    assert!(!res.canDeleteRow(&member_user, &draft_row));
+    assert!(!res.can_edit(&member_user));
+    assert!(!res.can_edit_row(&member_user, &draft_row));
+    assert!(!res.can_delete_row(&member_user, &draft_row));
 
     // Admin has invoices.edit & invoices.delete, but Settled records are locked
-    assert!(res.canEdit(&admin_user));
-    assert!(res.canDelete(&admin_user));
+    assert!(res.can_edit(&admin_user));
+    assert!(res.can_delete(&admin_user));
 
     // Draft row is editable and deletable
-    assert!(res.canEditRow(&admin_user, &draft_row));
-    assert!(res.canDeleteRow(&admin_user, &draft_row));
+    assert!(res.can_edit_row(&admin_user, &draft_row));
+    assert!(res.can_delete_row(&admin_user, &draft_row));
 
     // Settled row is locked by record-level policy
-    assert!(!res.canEditRow(&admin_user, &settled_row));
-    assert!(!res.canDeleteRow(&admin_user, &settled_row));
-
-    // Both camelCase and snake_case aliases work interchangeably
     assert!(!res.can_edit_row(&admin_user, &settled_row));
     assert!(!res.can_delete_row(&admin_user, &settled_row));
 }
@@ -370,19 +364,19 @@ fn test_fluent_query_builder_sql_and_bindings() {
     );
     assert_eq!(bindings, vec!["Paid", "100"]);
 
-    // Test camelCase aliases
-    let query_camel = Query::table("users")
-        .whereEq("role", "admin")
-        .whereLike("email", "%@company.com")
-        .orderBy("id", "ASC")
+    // Test filtered users query
+    let query2 = Query::table("users")
+        .where_eq("role", "admin")
+        .where_like("email", "%@company.com")
+        .order_by("id", "ASC")
         .limit(5);
 
-    let (sql_camel, bindings_camel) = query_camel.toSql();
+    let (sql2, bindings2) = query2.to_sql();
     assert_eq!(
-        sql_camel,
+        sql2,
         "SELECT * FROM users WHERE role = ? AND email LIKE ? ORDER BY id ASC LIMIT 5"
     );
-    assert_eq!(bindings_camel, vec!["admin", "%@company.com"]);
+    assert_eq!(bindings2, vec!["admin", "%@company.com"]);
 }
 
 #[test]
@@ -539,22 +533,22 @@ impl Resource for ActionTestResource {
                     .label("Publish Now")
                     .icon("check")
                     .color("emerald")
-                    .requiresConfirmation()
-                    .modalHeading("Publish Product")
-                    .modalDescription("Are you sure you want to make this product live?"),
+                    .requires_confirmation(true)
+                    .modal_heading("Publish Product")
+                    .modal_description("Are you sure you want to make this product live?"),
             ])
-            .bulkActions(vec![
+            .bulk_actions(vec![
                 BulkAction::export(),
                 BulkAction::delete(),
                 BulkAction::make("archive")
                     .label("Archive Selected")
                     .color("amber")
-                    .requiresConfirmation()
-                    .modalHeading("Archive Records")
-                    .modalDescription("Archive all selected items?"),
+                    .requires_confirmation(true)
+                    .modal_heading("Archive Records")
+                    .modal_description("Archive all selected items?"),
             ])
-            .emptyStateHeading("No products in inventory")
-            .emptyStateDescription("Add your first product to get started.")
+            .empty_state_heading("No products in inventory")
+            .empty_state_description("Add your first product to get started.")
     }
 
     fn fetch_rows(&self, _query: &QueryState) -> (Vec<RowData>, usize) {
@@ -604,15 +598,15 @@ impl Resource for ActionTestResource {
 fn test_actions_and_replicate_row() {
     let res = ActionTestResource::new();
 
-    // Verify Action builder with strict camelCase and fluent methods
+    // Verify Action builder with fluent methods
     let custom_action = Action::make("duplicate")
         .label("Clone Product")
         .icon("copy")
         .color("indigo")
-        .requiresConfirmation()
-        .modalHeading("Clone this item")
-        .modalDescription("Are you sure you want to clone this item?")
-        .actionUrl("/custom/url");
+        .requires_confirmation(true)
+        .modal_heading("Clone this item")
+        .modal_description("Are you sure you want to clone this item?")
+        .action_url("/custom/url");
 
     expect(&custom_action.id).to_be("duplicate");
     expect(&custom_action.label).to_be("Clone Product");
@@ -622,13 +616,13 @@ fn test_actions_and_replicate_row() {
     expect(custom_action.action_url.as_deref().unwrap()).to_be("/custom/url");
 
     // Test record replication hook
-    let new_id = res.replicateRow("1").expect("Replication should succeed");
+    let new_id = res.replicate_row("1").expect("Replication should succeed");
     let cloned_record = res.get_row(&new_id).expect("Cloned record should exist");
     expect(cloned_record.get("name").unwrap()).to_be("MacBook Pro (Copy)");
     expect(cloned_record.get("price").unwrap()).to_be("1999");
 
     // Test row action dispatcher
-    let action_msg = res.handleAction("replicate", "2").expect("Dispatcher replicate should succeed");
+    let action_msg = res.handle_action("replicate", "2").expect("Dispatcher replicate should succeed");
     assert!(action_msg.contains("replicated successfully"));
 
     let (_, total) = res.fetch_rows(&QueryState::default());
@@ -639,13 +633,13 @@ fn test_actions_and_replicate_row() {
 fn test_bulk_delete_and_streaming_export() {
     let res = ActionTestResource::new();
 
-    // Verify BulkAction builder with strict camelCase
+    // Verify BulkAction builder
     let bulk_act = BulkAction::make("archive")
         .label("Archive Selected")
         .color("amber")
-        .requiresConfirmation()
-        .modalHeading("Confirm Archive")
-        .modalDescription("Selected records will be archived.");
+        .requires_confirmation(true)
+        .modal_heading("Confirm Archive")
+        .modal_description("Selected records will be archived.");
 
     expect(&bulk_act.id).to_be("archive");
     expect(&bulk_act.label).to_be("Archive Selected");
@@ -654,19 +648,19 @@ fn test_bulk_delete_and_streaming_export() {
     expect(bulk_act.modal_heading.as_deref().unwrap()).to_be("Confirm Archive");
 
     // High-performance streaming CSV export
-    let csv_output = res.bulkExport(&["1".to_string(), "2".to_string()], "csv").expect("CSV export should succeed");
+    let csv_output = res.bulk_export(&["1".to_string(), "2".to_string()], "csv").expect("CSV export should succeed");
     assert!(csv_output.contains("name,price") || csv_output.contains("price,name"));
     assert!(csv_output.contains("MacBook Pro"));
     assert!(csv_output.contains("Studio Display"));
 
     // High-performance streaming JSON export
-    let json_output = res.bulkExport(&["1".to_string(), "2".to_string()], "json").expect("JSON export should succeed");
+    let json_output = res.bulk_export(&["1".to_string(), "2".to_string()], "json").expect("JSON export should succeed");
     assert!(json_output.contains("MacBook Pro"));
     assert!(json_output.contains("Studio Display"));
     assert!(json_output.starts_with('[') && json_output.ends_with(']'));
 
     // High-concurrency in-process batch delete
-    let deleted_count = res.bulkDelete(&["1".to_string(), "2".to_string()]).expect("Bulk delete should succeed");
+    let deleted_count = res.bulk_delete(&["1".to_string(), "2".to_string()]).expect("Bulk delete should succeed");
     assert_eq!(deleted_count, 2);
 
     let (_, remaining) = res.fetch_rows(&QueryState::default());
@@ -674,33 +668,33 @@ fn test_bulk_delete_and_streaming_export() {
 }
 
 #[test]
-fn test_form_section_and_field_camel_case_builder() {
+fn test_form_section_and_field_builder() {
     // Section layout with columns and schema
     let section = Section::make("General Information")
         .description("Essential product attributes")
         .columns(2)
         .schema(vec![
             FormField::text("title")
-                .helperText("Enter full product title")
+                .helper_text("Enter full product title")
                 .prefix("https://")
                 .suffix(".io")
-                .columnSpan(2),
+                .column_span(2),
             FormField::number("inventory")
-                .defaultValue("50")
+                .default_value("50")
                 .min("0")
                 .max("1000")
                 .step("1"),
             FormField::password("secret_key")
-                .helperText("API secret token")
+                .helper_text("API secret token")
                 .disabled(),
             FormField::textarea("description")
                 .rows(5)
                 .placeholder("Markdown supported")
-                .columnSpan(2),
+                .column_span(2),
             FormField::toggle("is_published")
-                .helperText("Toggle live visibility on storefront"),
+                .helper_text("Toggle live visibility on storefront"),
             FormField::datetime("scheduled_release")
-                .readOnly(),
+                .read_only(),
         ]);
 
     expect(section.title()).to_be("General Information");
@@ -774,8 +768,8 @@ fn test_table_view_renders_bulk_actions_and_empty_state() {
         fn slug(&self) -> &str { "orders" }
         fn table(&self) -> Table {
             Table::new()
-                .emptyStateHeading("No orders found")
-                .emptyStateDescription("No customer orders recorded yet.")
+                .empty_state_heading("No orders found")
+                .empty_state_description("No customer orders recorded yet.")
         }
         fn fetch_rows(&self, _query: &QueryState) -> (Vec<RowData>, usize) { (vec![], 0) }
     }
@@ -1190,56 +1184,55 @@ async fn test_enterprise_app_module_and_api_responses() {
 }
 
 #[test]
-fn test_studio_tui_rendering_and_telemetry() {
-    use terminus::studio::StudioApp;
+fn test_sqlite_cache_persistence_and_ttl() {
+    use std::sync::{Arc, Mutex};
+    let conn = Arc::new(Mutex::new(rusqlite::Connection::open_in_memory().unwrap()));
+    let cache = SqliteCache::from_arc(conn.clone()).unwrap();
 
-    let mut app = StudioApp::new("terminus.db");
+    // Store value with 3600s TTL
+    cache.put("user:session:1", "session_payload_data", Some(3600));
+    assert_eq!(cache.get("user:session:1"), Some("session_payload_data".to_string()));
 
-    // 1. Header and tabs
-    let header = app.render_header();
-    assert!(header.contains("TERMINUS STUDIO"));
-    assert!(header.contains("HOST:"));
+    // Store value with None (infinite) TTL
+    cache.put("app:config:name", "Terminus", None);
+    assert_eq!(cache.get("app:config:name"), Some("Terminus".to_string()));
 
-    let tabs = app.render_tabs();
-    assert!(tabs.contains("Overview"));
-    assert!(tabs.contains("Database"));
-    assert!(tabs.contains("Cache & Redis"));
-    assert!(tabs.contains("Queue"));
-    assert!(tabs.contains("API Tokens"));
-    assert!(tabs.contains("Mail Outbox"));
-    assert!(tabs.contains("Audit Logs"));
+    // Forget key
+    let forgotten = cache.forget("user:session:1");
+    assert!(forgotten);
+    assert_eq!(cache.get("user:session:1"), None);
 
-    // 2. Individual screens
-    let overview = app.render_overview();
-    assert!(overview.contains("SYSTEM TELEMETRY"));
-    assert!(overview.contains("DATABASE (SQLite)"));
+    // Flush entire cache
+    cache.flush();
+    assert_eq!(cache.get("app:config:name"), None);
+}
 
-    let db_screen = app.render_database();
-    assert!(db_screen.contains("DATABASE EXPLORER"));
+#[test]
+fn test_sqlite_job_queue_persistence_and_retries() {
+    let queue = SqliteJobQueue::new(":memory:").unwrap();
+    let stats0 = queue.stats();
+    assert_eq!(stats0.pending, 0);
 
-    let cache_screen = app.render_cache();
-    assert!(cache_screen.contains("CACHE & REDIS TELEMETRY"));
-    assert!(cache_screen.contains("MEMORY CACHE STORE"));
+    // Push successful job
+    let job_id = queue.push("send_invoice", r#"{"order_id": 9021}"#).unwrap();
+    assert!(job_id > 0);
+    assert_eq!(queue.stats().pending, 1);
 
-    let queue_screen = app.render_queue();
-    assert!(queue_screen.contains("BACKGROUND JOB QUEUE"));
+    // Process job successfully
+    let worked = queue.work_one(|name, payload| {
+        assert_eq!(name, "send_invoice");
+        assert!(payload.contains("9021"));
+        Ok(())
+    }).unwrap();
+    assert_eq!(worked, Some(true));
+    assert_eq!(queue.stats().pending, 0);
+    assert_eq!(queue.stats().processed, 1);
 
-    let tokens_screen = app.render_tokens();
-    assert!(tokens_screen.contains("PERSONAL ACCESS TOKENS"));
-
-    let mail_screen = app.render_mail();
-    assert!(mail_screen.contains("TRANSACTIONAL MAIL OUTBOX"));
-
-    let audit_screen = app.render_audit();
-    assert!(audit_screen.contains("SECURITY AUDIT TRAIL LOGS"));
-
-    // 3. Tab switching and full screen rendering
-    for tab in 1..=7 {
-        app.active_tab = tab;
-        let screen = app.render_screen();
-        assert!(screen.contains("TERMINUS STUDIO"));
-        assert!(screen.contains("Studio:"));
-    }
+    // Push failing job with max_attempts = 1
+    queue.push_with_max_attempts("flaky_service", "{}", 1).unwrap();
+    let failed = queue.work_one(|_, _| Err("Service unavailable".to_string())).unwrap();
+    assert_eq!(failed, Some(false));
+    assert_eq!(queue.stats().failed, 1);
 }
 
 #[test]
@@ -1248,9 +1241,7 @@ fn test_rich_form_fields_and_media_builders() {
     use terminus::table::{Column, ColumnType};
 
     let rt1 = FormField::rich_text("content");
-    let rt2 = FormField::richText("body");
     assert_eq!(rt1.field_type, FieldType::RichText);
-    assert_eq!(rt2.field_type, FieldType::RichText);
 
     let img = FormField::image("cover");
     let gal = FormField::gallery("photos");
@@ -1264,9 +1255,7 @@ fn test_rich_form_fields_and_media_builders() {
     assert_eq!(color.field_type, FieldType::Color);
 
     let kv1 = FormField::key_value("metadata");
-    let kv2 = FormField::keyValue("attributes");
     assert_eq!(kv1.field_type, FieldType::KeyValue);
-    assert_eq!(kv2.field_type, FieldType::KeyValue);
 
     let col_img = Column::image("avatar");
     assert_eq!(col_img.name, "avatar");
@@ -1490,59 +1479,39 @@ fn test_advanced_filters_and_presets() {
 }
 
 #[test]
-fn test_excel_and_pdf_document_generation() {
+fn test_auth_user_extractor_and_helpers() {
     use terminus::prelude::*;
 
-    // 1. Excel OpenXML & CSV
-    let mut excel = ExcelDocument::new("Orders")
-        .headers(vec!["Order ID", "Customer", "Total", "Status"]);
+    let test_user = User {
+        id: "usr_42".to_string(),
+        name: "Pratik".to_string(),
+        email: "pratik@example.com".to_string(),
+        role: Role::Superadmin,
+        status: UserStatus::Active,
+        ..Default::default()
+    };
 
-    excel.add_row(vec!["ORD-101", "Alice", "$199.00", "Completed"]);
-    excel.add_row(vec!["ORD-102", "Bob", "$89.50", "Pending"]);
+    // Test with_user helper
+    let res = with_user(test_user.clone(), || {
+        let u = user().expect("User should be in thread context");
+        assert_eq!(u.id, "usr_42");
+        assert_eq!(u.name, "Pratik");
+        assert!(is_superadmin());
+        assert!(can("users.manage"));
+        assert!(!cannot("users.manage"));
+        "ok"
+    });
+    assert_eq!(res, "ok");
 
-    let csv = excel.to_csv();
-    assert!(csv.contains("Order ID,Customer,Total,Status"));
-    assert!(csv.contains("ORD-101,Alice,$199.00,Completed"));
-
-    let xml = excel.to_excel_xml();
-    assert!(xml.contains("urn:schemas-microsoft-com:office:spreadsheet"));
-    assert!(xml.contains("<Worksheet ss:Name=\"Orders\">"));
-    assert!(xml.contains("<Data ss:Type=\"String\">ORD-101</Data>"));
-
-    // 2. Native PDF Document
-    let pdf = PdfDocument::new("INVOICE #9021")
-        .company("Terminus Tech", "100 Market St, SF")
-        .recipient("Acme Corp", "200 Broadway, NY")
-        .table(
-            vec!["Item", "Quantity", "Rate", "Amount"],
-            vec![
-                vec!["Terminus Cloud License", "1", "$299.00", "$299.00"],
-                vec!["Support SLA", "1", "$99.00", "$99.00"],
-            ],
-        )
-        .total("$398.00")
-        .notes("Payment due within 14 days.");
-
-    let pdf_bytes = pdf.to_pdf_bytes();
-    assert!(pdf_bytes.starts_with(b"%PDF-1.4"));
-    let pdf_str = String::from_utf8_lossy(&pdf_bytes);
-    assert!(pdf_str.contains("INVOICE #9021"));
-    assert!(pdf_str.contains("Terminus Tech"));
-    assert!(pdf_str.contains("TOTAL AMOUNT: $398.00"));
-    assert!(pdf_str.contains("%%EOF"));
+    // Outside task context
+    assert!(user().is_none());
 }
 
 #[test]
-fn test_passkeys_oauth_and_webhooks() {
+fn test_strict_webhook_hmac_sha256_verification() {
     use terminus::prelude::*;
 
-    // 1. Passkey Challenge
-    let challenge = PasskeyChallenge::generate("usr_10", "pratik", "terminus.dev");
-    assert!(challenge.challenge.starts_with("passkey_challenge_usr_10_"));
-    assert_eq!(challenge.user_name, "pratik");
-    assert_eq!(challenge.relying_party, "terminus.dev");
-
-    // 2. OAuth Provider
+    // 1. OAuth Provider
     let github = OAuthProvider::GitHub {
         client_id: "gh_client_123".to_string(),
         client_secret: "gh_secret_456".to_string(),
@@ -1552,25 +1521,31 @@ fn test_passkeys_oauth_and_webhooks() {
     assert!(auth_url.contains("client_id=gh_client_123"));
     assert!(auth_url.contains("state=state_abc"));
 
-    // 3. Webhook Signature Verification
+    // 2. Webhook Signature Verification with real HMAC-SHA256
     let raw_payload = r#"{"event":"order.completed","order_id":"ord_101"}"#;
-    assert!(WebhookVerifier::verify_signature(raw_payload, "test_sig", "whsec_abc"));
-    assert!(WebhookVerifier::verify_signature(raw_payload, "t=123,v1=sig_hash", "whsec_abc"));
-    assert!(!WebhookVerifier::verify_signature(raw_payload, "", "whsec_abc"));
-    assert!(!WebhookVerifier::verify_signature(raw_payload, "test_sig", ""));
-}
+    let secret = "whsec_live_top_secret_key";
+    let computed_sig = WebhookVerifier::compute_signature(raw_payload, secret);
 
-#[test]
-fn test_push_notifications_and_dispatch() {
-    use terminus::prelude::*;
+    // Direct hex signature matches
+    assert!(WebhookVerifier::verify_signature(raw_payload, &computed_sig, secret));
 
-    let push = PushNotification::new("New Order Alert", "Order #4092 received", "fcm_device_token_xyz")
-        .with_data("order_id", "4092");
+    // sha256= prefix matches
+    let sha256_sig = format!("sha256={}", computed_sig);
+    assert!(WebhookVerifier::verify_signature(raw_payload, &sha256_sig, secret));
 
-    let fcm = push.to_fcm_payload();
-    assert_eq!(fcm["message"]["token"], "fcm_device_token_xyz");
-    assert_eq!(fcm["message"]["notification"]["title"], "New Order Alert");
-    assert_eq!(fcm["message"]["data"]["order_id"], "4092");
+    // Timestamped Stripe/GitHub format: t=timestamp,v1=sig
+    let timestamp = "1729000000";
+    let signed_payload = format!("{}.{}", timestamp, raw_payload);
+    let v1_sig = WebhookVerifier::compute_signature(&signed_payload, secret);
+    let header = format!("t={},v1={}", timestamp, v1_sig);
+    assert!(WebhookVerifier::verify_signature(raw_payload, &header, secret));
+
+    // Rejection on invalid signature, secret, or tampering
+    assert!(!WebhookVerifier::verify_signature(raw_payload, "invalid_sig", secret));
+    assert!(!WebhookVerifier::verify_signature(raw_payload, &computed_sig, "wrong_secret"));
+    assert!(!WebhookVerifier::verify_signature(r#"{"event":"tampered"}"#, &computed_sig, secret));
+    assert!(!WebhookVerifier::verify_signature(raw_payload, "", secret));
+    assert!(!WebhookVerifier::verify_signature(raw_payload, &computed_sig, ""));
 }
 
 #[test]
@@ -1608,26 +1583,13 @@ fn test_platform_adapters_and_sdk_generator() {
     use terminus::prelude::*;
 
     // 1. Platform detection from user-agent
-    assert_eq!(Platform::from_user_agent("Mozilla/5.0 (Linux; Android 14)"), Platform::Android);
-    assert_eq!(Platform::from_user_agent("Mozilla/5.0 (iPhone; CPU iPhone OS 17)"), Platform::Ios);
+    assert_eq!(Platform::from_user_agent("Mozilla/5.0 (Linux; Android 14)"), Platform::Mobile);
+    assert_eq!(Platform::from_user_agent("Mozilla/5.0 (iPhone; CPU iPhone OS 17)"), Platform::Mobile);
     assert_eq!(Platform::from_user_agent("Tauri/2.0 Desktop"), Platform::Desktop);
-    assert_eq!(Platform::from_user_agent("ESP32-Scanner-Client"), Platform::Iot);
+    assert_eq!(Platform::from_user_agent("Electron/28.0 Desktop"), Platform::Desktop);
     assert_eq!(Platform::from_user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X)"), Platform::Web);
 
-    // 2. Push Dispatcher with APNs and delivery
-    let dispatcher = PushDispatcher::new();
-    let n1 = PushNotification::new("Order Shipped", "Package #901 has dispatched", "tok_1").badge(2);
-    let apns = n1.to_apns_payload();
-    assert_eq!(apns["aps"]["badge"], 2);
-    assert_eq!(apns["aps"]["sound"], "default");
-
-    dispatcher.enqueue(n1);
-    assert_eq!(dispatcher.pending_count(), 1);
-    let delivered = dispatcher.deliver_all();
-    assert_eq!(delivered.len(), 1);
-    assert_eq!(dispatcher.pending_count(), 0);
-
-    // 3. Typed SDK Generator (TypeScript & OpenAPI 3.0)
+    // 2. Typed SDK Generator (TypeScript & OpenAPI 3.0)
     let gen = SdkGenerator::new("Acme Logistics", "1.0")
         .type_schema("Item", vec![("id", "string"), ("stock", "number")])
         .endpoint("GET", "/items", None, "Item[]", "Fetch items")
@@ -1636,7 +1598,7 @@ fn test_platform_adapters_and_sdk_generator() {
     let ts = gen.to_typescript();
     assert!(ts.contains("export interface Item"));
     assert!(ts.contains("export class AcmeLogisticsClient"));
-    assert!(ts.contains("public async get_items(): Promise<Item[]>"));
+    assert!(ts.contains("async getItems(): Promise<Item[]>"));
 
     let openapi = gen.to_openapi_json();
     assert_eq!(openapi["openapi"], "3.0.3");

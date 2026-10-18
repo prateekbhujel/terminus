@@ -523,7 +523,7 @@ async fn resource_create_page(
         return (StatusCode::NOT_FOUND, Html("<h1>404 Resource Not Found</h1>")).into_response();
     };
 
-    if !res.canCreate(&user) {
+    if !res.can_create(&user) {
         let forbidden_body = layout::render_forbidden_page(&user, res.name());
         let full_html = layout::render_page(
             "Access Restricted",
@@ -567,7 +567,7 @@ async fn resource_edit_page(
         return (StatusCode::NOT_FOUND, Html("<h1>404 Resource Not Found</h1>")).into_response();
     };
 
-    if !res.canEdit(&user) {
+    if !res.can_edit(&user) {
         let forbidden_body = layout::render_forbidden_page(&user, res.name());
         let full_html = layout::render_page(
             "Access Restricted",
@@ -582,9 +582,9 @@ async fn resource_edit_page(
         return (StatusCode::FORBIDDEN, Html(full_html)).into_response();
     }
 
-    let row_data = res.getRow(&id);
+    let row_data = res.get_row(&id);
     if let Some(ref r) = row_data {
-        if !res.canEditRow(&user, r) {
+        if !res.can_edit_row(&user, r) {
             let forbidden_body = layout::render_forbidden_page(&user, res.name());
             let full_html = layout::render_page(
                 "Access Restricted",
@@ -631,7 +631,7 @@ async fn resource_page(
         return (StatusCode::NOT_FOUND, Html("<h1>404 Resource Not Found</h1>")).into_response();
     };
 
-    if !res.canView(&user) {
+    if !res.can_view(&user) {
         let forbidden_body = layout::render_forbidden_page(&user, res.name());
         let full_html = layout::render_page(
             "Access Restricted",
@@ -681,7 +681,7 @@ async fn resource_table_partial(
         return (StatusCode::NOT_FOUND, Html("<h1>404 Resource Not Found</h1>")).into_response();
     };
 
-    if !res.canView(&user) {
+    if !res.can_view(&user) {
         return (StatusCode::FORBIDDEN, Html(layout::render_forbidden_page(&user, res.name()))).into_response();
     }
 
@@ -706,7 +706,7 @@ async fn resource_create(
         return (StatusCode::NOT_FOUND, Html("<h1>404 Resource Not Found</h1>")).into_response();
     };
 
-    if !res.canCreate(&user) {
+    if !res.can_create(&user) {
         return (StatusCode::FORBIDDEN, Html(layout::render_forbidden_page(&user, res.name()))).into_response();
     }
 
@@ -749,12 +749,12 @@ async fn resource_update(
         return (StatusCode::NOT_FOUND, Html("<h1>404 Resource Not Found</h1>")).into_response();
     };
 
-    if !res.canEdit(&user) {
+    if !res.can_edit(&user) {
         return (StatusCode::FORBIDDEN, Html(layout::render_forbidden_page(&user, res.name()))).into_response();
     }
 
-    if let Some(existing_row) = res.getRow(&id) {
-        if !res.canEditRow(&user, &existing_row) {
+    if let Some(existing_row) = res.get_row(&id) {
+        if !res.can_edit_row(&user, &existing_row) {
             return (StatusCode::FORBIDDEN, Html(layout::render_forbidden_page(&user, res.name()))).into_response();
         }
     }
@@ -797,12 +797,12 @@ async fn resource_delete(
         return (StatusCode::NOT_FOUND, Html("<h1>404 Resource Not Found</h1>")).into_response();
     };
 
-    if !res.canDelete(&user) {
+    if !res.can_delete(&user) {
         return (StatusCode::FORBIDDEN, Html(layout::render_forbidden_page(&user, res.name()))).into_response();
     }
 
-    if let Some(existing_row) = res.getRow(&id) {
-        if !res.canDeleteRow(&user, &existing_row) {
+    if let Some(existing_row) = res.get_row(&id) {
+        if !res.can_delete_row(&user, &existing_row) {
             return (StatusCode::FORBIDDEN, Html(layout::render_forbidden_page(&user, res.name()))).into_response();
         }
     }
@@ -846,7 +846,7 @@ async fn resource_export(
         return (StatusCode::NOT_FOUND, Html("<h1>404 Resource Not Found</h1>")).into_response();
     };
 
-    if !res.canView(&user) {
+    if !res.can_view(&user) {
         return (StatusCode::FORBIDDEN, Html(layout::render_forbidden_page(&user, res.name()))).into_response();
     }
 
@@ -898,7 +898,7 @@ async fn resource_action(
         return (StatusCode::NOT_FOUND, Html("<h1>404 Resource Not Found</h1>")).into_response();
     };
 
-    if !res.canEdit(&user) {
+    if !res.can_edit(&user) {
         return (StatusCode::FORBIDDEN, Html(layout::render_forbidden_page(&user, res.name()))).into_response();
     }
 
@@ -941,7 +941,7 @@ async fn resource_bulk_action(
         return (StatusCode::NOT_FOUND, Html("<h1>404 Resource Not Found</h1>")).into_response();
     };
 
-    if !res.canEdit(&user) {
+    if !res.can_edit(&user) {
         return (StatusCode::FORBIDDEN, Html(layout::render_forbidden_page(&user, res.name()))).into_response();
     }
 
@@ -983,7 +983,7 @@ async fn resource_json_api(
         return (StatusCode::NOT_FOUND, axum::Json(serde_json::json!({ "error": "Not Found" }))).into_response();
     };
 
-    if !res.canView(&user) {
+    if !res.can_view(&user) {
         return (StatusCode::FORBIDDEN, axum::Json(serde_json::json!({ "error": "Forbidden" }))).into_response();
     }
 

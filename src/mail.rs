@@ -1,4 +1,5 @@
 use std::sync::{Arc, Mutex};
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
 pub struct MailMessage {
@@ -130,9 +131,78 @@ impl MailMessage {
     }
 }
 
+/// Pluggable email delivery transport
+pub trait MailTransport: Send + Sync {
+    fn deliver(&self, msg: &MailMessage) -> Result<(), String>;
+}
+
+/// In-memory array transport for testing and local assertions
+#[derive(Clone, Default)]
+pub struct ArrayTransport {
+    mailbox: Arc<Mutex<Vec<MailMessage>>>,
+}
+
+impl ArrayTransport {
+    pub fn new() -> Self {
+        Self {
+            mailbox: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    pub fn messages(&self) -> Vec<MailMessage> {
+        self.mailbox.lock().unwrap().clone()
+    }
+
+    pub fn clear(&self) {
+        self.mailbox.lock().unwrap().clear();
+    }
+}
+
+impl MailTransport for ArrayTransport {
+    fn deliver(&self, msg: &MailMessage) -> Result<(), String> {
+        self.mailbox.lock().unwrap().push(msg.clone());
+        Ok(())
+    }
+}
+
+/// Log transport writing email deliveries to tracing / stdout
+pub struct LogTransport;
+
+impl MailTransport for LogTransport {
+    fn deliver(&self, msg: &MailMessage) -> Result<(), String> {
+        tracing::info!(to = %msg.to, subject = %msg.subject, "Delivered email message");
+        Ok(())
+    }
+}
+
+/// File transport saving rendered HTML emails to disk
+pub struct FileTransport {
+    outbox_dir: PathBuf,
+}
+
+impl FileTransport {
+    pub fn new(dir: impl AsRef<Path>) -> Self {
+        let outbox_dir = dir.as_ref().to_path_buf();
+        let _ = std::fs::create_dir_all(&outbox_dir);
+        Self { outbox_dir }
+    }
+}
+
+impl MailTransport for FileTransport {
+    fn deliver(&self, msg: &MailMessage) -> Result<(), String> {
+        let now = chrono::Utc::now().timestamp_millis();
+        let safe_to = msg.to.replace(['@', '.', ' '], "_");
+        let filename = format!("{}_{}.html", now, safe_to);
+        let path = self.outbox_dir.join(filename);
+        std::fs::write(&path, msg.render_html()).map_err(|e| e.to_string())?;
+        Ok(())
+    }
+}
+
 #[derive(Clone)]
 pub struct Mailer {
-    sent_mailbox: Arc<Mutex<Vec<MailMessage>>>,
+    transport: Arc<dyn MailTransport>,
+    array_ref: Option<ArrayTransport>,
 }
 
 impl Default for Mailer {
@@ -142,23 +212,50 @@ impl Default for Mailer {
 }
 
 impl Mailer {
+    /// Create a new in-memory mailer (default)
     pub fn new() -> Self {
+        let array = ArrayTransport::new();
         Self {
-            sent_mailbox: Arc::new(Mutex::new(Vec::new())),
+            transport: Arc::new(array.clone()),
+            array_ref: Some(array),
         }
     }
 
+    /// Create a mailer with custom transport
+    pub fn with_transport(transport: impl MailTransport + 'static) -> Self {
+        Self {
+            transport: Arc::new(transport),
+            array_ref: None,
+        }
+    }
+
+    /// Create a log-based mailer
+    pub fn log() -> Self {
+        Self::with_transport(LogTransport)
+    }
+
+    /// Create a file-outbox mailer
+    pub fn file(dir: impl AsRef<Path>) -> Self {
+        Self::with_transport(FileTransport::new(dir))
+    }
+
+    /// Deliver an email message via configured transport
     pub fn send(&self, msg: MailMessage) -> Result<(), String> {
-        let mut box_lock = self.sent_mailbox.lock().unwrap();
-        box_lock.push(msg);
-        Ok(())
+        self.transport.deliver(&msg)
     }
 
+    /// Get sent messages if using array transport
     pub fn sent_messages(&self) -> Vec<MailMessage> {
-        self.sent_mailbox.lock().unwrap().clone()
+        self.array_ref
+            .as_ref()
+            .map(|a| a.messages())
+            .unwrap_or_default()
     }
 
+    /// Clear sent messages if using array transport
     pub fn clear(&self) {
-        self.sent_mailbox.lock().unwrap().clear();
+        if let Some(a) = &self.array_ref {
+            a.clear();
+        }
     }
 }

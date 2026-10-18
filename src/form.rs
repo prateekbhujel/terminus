@@ -94,11 +94,6 @@ impl FormField {
         Self::date_time(name)
     }
 
-    #[allow(non_snake_case)]
-    pub fn dateTime(name: impl Into<String>) -> Self {
-        Self::date_time(name)
-    }
-
     pub fn select(name: impl Into<String>, options: Vec<(&str, &str)>) -> Self {
         Self::new_field(
             name,
@@ -117,18 +112,8 @@ impl FormField {
         )
     }
 
-    #[allow(non_snake_case)]
-    pub fn searchableSelect(name: impl Into<String>, options: Vec<(&str, &str)>) -> Self {
-        Self::searchable_select(name, options)
-    }
-
     pub fn rich_text(name: impl Into<String>) -> Self {
         Self::new_field(name, FieldType::RichText)
-    }
-
-    #[allow(non_snake_case)]
-    pub fn richText(name: impl Into<String>) -> Self {
-        Self::rich_text(name)
     }
 
     pub fn image(name: impl Into<String>) -> Self {
@@ -160,16 +145,6 @@ impl FormField {
         )
     }
 
-    #[allow(non_snake_case)]
-    pub fn draggableBlocks(name: impl Into<String>, block_types: Vec<impl Into<String>>) -> Self {
-        Self::draggable_blocks(name, block_types)
-    }
-
-    #[allow(non_snake_case)]
-    pub fn keyValue(name: impl Into<String>) -> Self {
-        Self::key_value(name)
-    }
-
     pub fn required(mut self) -> Self {
         self.required = true;
         self
@@ -183,11 +158,6 @@ impl FormField {
     pub fn helper_text(mut self, text: impl Into<String>) -> Self {
         self.helper_text = Some(text.into());
         self
-    }
-
-    #[allow(non_snake_case)]
-    pub fn helperText(self, text: impl Into<String>) -> Self {
-        self.helper_text(text)
     }
 
     pub fn prefix(mut self, p: impl Into<String>) -> Self {
@@ -205,19 +175,9 @@ impl FormField {
         self
     }
 
-    #[allow(non_snake_case)]
-    pub fn defaultValue(self, val: impl Into<String>) -> Self {
-        self.default_value(val)
-    }
-
     pub fn column_span(mut self, span: usize) -> Self {
         self.column_span = span;
         self
-    }
-
-    #[allow(non_snake_case)]
-    pub fn columnSpan(self, span: usize) -> Self {
-        self.column_span(span)
     }
 
     pub fn disabled(mut self) -> Self {
@@ -228,11 +188,6 @@ impl FormField {
     pub fn read_only(mut self) -> Self {
         self.read_only = true;
         self
-    }
-
-    #[allow(non_snake_case)]
-    pub fn readOnly(self) -> Self {
-        self.read_only()
     }
 
     pub fn min(mut self, min: impl Into<String>) -> Self {

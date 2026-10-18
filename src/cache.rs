@@ -1,10 +1,10 @@
-//! Cache system with in-memory TTL and native Redis driver support
+//! Terminus Cache Engine
+//!
+//! Provides thread-safe in-memory caching with TTL expiration (`MemoryCache`)
+//! and persistent SQLite-backed caching (`SqliteCache`) that survives server restarts.
 
 use std::collections::HashMap;
-use std::io::{Read, Write};
-use std::net::TcpStream;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 #[derive(Debug, Clone)]
 struct CacheEntry {
@@ -12,10 +12,18 @@ struct CacheEntry {
     expires_at: Option<u64>,
 }
 
+/// Unified cache driver contract
 pub trait CacheDriver: Send + Sync {
+    /// Retrieve a cached value by key
     fn get(&self, key: &str) -> Option<String>;
+
+    /// Store a value in the cache with an optional TTL in seconds
     fn put(&self, key: &str, value: &str, ttl_secs: Option<u64>);
+
+    /// Remove a cached value by key. Returns true if key was present.
     fn forget(&self, key: &str) -> bool;
+
+    /// Wipe all cached keys
     fn flush(&self);
 
     /// Retrieve an item from the cache, or execute the given closure and store the result
@@ -88,117 +96,101 @@ impl CacheDriver for MemoryCache {
     }
 }
 
-/// Redis Cache Driver with native RESP protocol support
-/// Connects to redis://127.0.0.1:6379, falling back gracefully to memory if Redis is offline
+/// Persistent SQLite Cache Driver
+///
+/// Stores cached keys and TTLs in a dedicated SQLite table (`_terminus_cache`).
+/// Data is persisted across server restarts and process lifecycles.
 #[derive(Clone)]
-pub struct RedisCache {
-    addr: String,
-    fallback: MemoryCache,
+pub struct SqliteCache {
+    conn: Arc<Mutex<rusqlite::Connection>>,
 }
 
-impl RedisCache {
-    pub fn new(addr: impl Into<String>) -> Self {
-        Self {
-            addr: addr.into(),
-            fallback: MemoryCache::new(),
-        }
+impl SqliteCache {
+    /// Initialize SQLite cache pointing to a database path (or :memory:)
+    pub fn new(path: &str) -> Result<Self, rusqlite::Error> {
+        let conn = if path == ":memory:" {
+            rusqlite::Connection::open_in_memory()?
+        } else {
+            rusqlite::Connection::open(path)?
+        };
+        let cache = Self {
+            conn: Arc::new(Mutex::new(conn)),
+        };
+        cache.init_table()?;
+        Ok(cache)
     }
 
-    fn connect(&self) -> Option<TcpStream> {
-        let stream = TcpStream::connect_timeout(
-            &self.addr.parse().ok()?,
-            Duration::from_millis(200),
-        ).ok()?;
-        stream.set_read_timeout(Some(Duration::from_millis(300))).ok()?;
-        stream.set_write_timeout(Some(Duration::from_millis(300))).ok()?;
-        Some(stream)
+    /// Initialize SQLite cache from an existing connection Arc
+    pub fn from_arc(conn: Arc<Mutex<rusqlite::Connection>>) -> Result<Self, rusqlite::Error> {
+        let cache = Self { conn };
+        cache.init_table()?;
+        Ok(cache)
+    }
+
+    fn init_table(&self) -> Result<(), rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS _terminus_cache (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                expires_at INTEGER
+            )",
+            [],
+        )?;
+        Ok(())
+    }
+
+    fn now_secs() -> i64 {
+        chrono::Utc::now().timestamp().max(0)
     }
 }
 
-impl CacheDriver for RedisCache {
+impl CacheDriver for SqliteCache {
     fn get(&self, key: &str) -> Option<String> {
-        let mut stream = match self.connect() {
-            Some(s) => s,
-            None => return self.fallback.get(key),
-        };
+        let conn = self.conn.lock().unwrap();
+        let now = Self::now_secs();
 
-        let cmd = format!("*2\r\n$3\r\nGET\r\n${}\r\n{}\r\n", key.len(), key);
-        if stream.write_all(cmd.as_bytes()).is_err() {
-            return self.fallback.get(key);
-        }
+        let row: Result<(String, Option<i64>), rusqlite::Error> = conn.query_row(
+            "SELECT value, expires_at FROM _terminus_cache WHERE key = ?1",
+            rusqlite::params![key],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        );
 
-        let mut buf = [0u8; 1024];
-        let bytes_read = match stream.read(&mut buf) {
-            Ok(n) => n,
-            Err(_) => return self.fallback.get(key),
-        };
-
-        let resp = String::from_utf8_lossy(&buf[..bytes_read]);
-        if resp.starts_with("$-1") {
-            // Null bulk string
-            return None;
-        }
-
-        if resp.starts_with('$') {
-            let parts: Vec<&str> = resp.split("\r\n").collect();
-            if parts.len() >= 2 {
-                return Some(parts[1].to_string());
+        match row {
+            Ok((value, expires_at)) => {
+                if let Some(exp) = expires_at {
+                    if exp <= now {
+                        let _ = conn.execute("DELETE FROM _terminus_cache WHERE key = ?1", rusqlite::params![key]);
+                        return None;
+                    }
+                }
+                Some(value)
             }
+            Err(_) => None,
         }
-
-        self.fallback.get(key)
     }
 
     fn put(&self, key: &str, value: &str, ttl_secs: Option<u64>) {
-        let mut stream = match self.connect() {
-            Some(s) => s,
-            None => {
-                self.fallback.put(key, value, ttl_secs);
-                return;
-            }
-        };
+        let conn = self.conn.lock().unwrap();
+        let expires_at = ttl_secs.map(|s| Self::now_secs() + s as i64);
 
-        let cmd = if let Some(ttl) = ttl_secs {
-            let ttl_str = ttl.to_string();
-            format!(
-                "*5\r\n$3\r\nSET\r\n${}\r\n{}\r\n${}\r\n{}\r\n$2\r\nEX\r\n${}\r\n{}\r\n",
-                key.len(),
-                key,
-                value.len(),
-                value,
-                ttl_str.len(),
-                ttl_str
-            )
-        } else {
-            format!(
-                "*3\r\n$3\r\nSET\r\n${}\r\n{}\r\n${}\r\n{}\r\n",
-                key.len(),
-                key,
-                value.len(),
-                value
-            )
-        };
-
-        if stream.write_all(cmd.as_bytes()).is_err() {
-            self.fallback.put(key, value, ttl_secs);
-        }
+        let _ = conn.execute(
+            "INSERT INTO _terminus_cache (key, value, expires_at)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value, expires_at = excluded.expires_at",
+            rusqlite::params![key, value, expires_at],
+        );
     }
 
     fn forget(&self, key: &str) -> bool {
-        let mut stream = match self.connect() {
-            Some(s) => s,
-            None => return self.fallback.forget(key),
-        };
-
-        let cmd = format!("*2\r\n$3\r\nDEL\r\n${}\r\n{}\r\n", key.len(), key);
-        let _ = stream.write_all(cmd.as_bytes());
-        self.fallback.forget(key)
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM _terminus_cache WHERE key = ?1", rusqlite::params![key])
+            .map(|n| n > 0)
+            .unwrap_or(false)
     }
 
     fn flush(&self) {
-        if let Some(mut stream) = self.connect() {
-            let _ = stream.write_all(b"*1\r\n$7\r\nFLUSHDB\r\n");
-        }
-        self.fallback.flush();
+        let conn = self.conn.lock().unwrap();
+        let _ = conn.execute("DELETE FROM _terminus_cache", []);
     }
 }

@@ -122,13 +122,6 @@ fn main() {
             let lang = args.iter().find(|a| a.starts_with("--lang=")).map(|a| a.trim_start_matches("--lang="));
             make_sdk(lang);
         }
-        "studio" | "tui" | "dashboard" | "pulse" | "inspector" => {
-            let db_path = args.iter().find(|a| a.starts_with("--db=")).map(|a| a.trim_start_matches("--db=")).unwrap_or("terminus.db");
-            let is_watch = args.iter().any(|a| a == "--watch" || a == "-w");
-            let is_once = args.iter().any(|a| a == "--once" || a == "--overview");
-            let tab_arg = args.iter().find(|a| a.starts_with("--tab=")).and_then(|a| a.trim_start_matches("--tab=").parse::<u8>().ok());
-            run_studio(db_path, is_watch, is_once, tab_arg);
-        }
         unknown => {
             eprintln!("\x1b[31mError:\x1b[0m Unknown command '{unknown}'\n");
             print_help();
@@ -147,7 +140,7 @@ fn print_banner() {
 
 fn print_help() {
     print_banner();
-    println!("Usage:\n  terminus <command> [arguments]\n\n\x1b[1mAvailable Commands:\x1b[0m\n  \x1b[33mnew [name] [--preset=...] [--frontend=...]\x1b[0m Scaffold a new Terminus project (interactive wizard or flags)\n  \x1b[33mschema [--json]\x1b[0m          Inspect complete application topology (models, routes, admin)\n  \x1b[33mroute:list | routes\x1b[0m      List registered web routes, admin resources & API endpoints\n  \x1b[33mtinker [--execute=...]\x1b[0m   Interactive database REPL & command console\n  \x1b[33mmake:controller <Name> [-r]\x1b[0m Scaffold a Controller (or RESTful resource controller)\n  \x1b[33mmake:model <Name> [-mc]\x1b[0m  Scaffold a Model (with optional -m migration, -c controller)\n  \x1b[33mmake:seeder <Name>\x1b[0m       Scaffold a database Seeder class\n  \x1b[33mmake:slice <Name> [--fields=...]\x1b[0m Scaffold a full-stack vertical domain slice (DDD)\n  \x1b[33mmake:resource <Name>\x1b[0m     Scaffold a new Admin Resource with table & form\n  \x1b[33mmake:module <Name>\x1b[0m       Scaffold an Enterprise Modular (DDD) domain module\n  \x1b[33mmake:repo <Name>\x1b[0m         Scaffold a SQLite repository implementation\n  \x1b[33mmake:migration <Name>\x1b[0m    Generate a timestamped SQL migration file\n  \x1b[33mmigrate\x1b[0m                  Run pending database migrations\n  \x1b[33mmigrate:status\x1b[0m           Show execution status of each migration batch\n  \x1b[33mmigrate:rollback\x1b[0m         Rollback the latest migration batch\n  \x1b[33mdb:seed\x1b[0m                  Seed demo accounts and orders into database\n  \x1b[33mdb:tables\x1b[0m                Inspect SQLite database tables, schema, and row counts\n  \x1b[33mschedule:run\x1b[0m             Run due scheduled tasks and recurring cron jobs\n  \x1b[33mschedule:list\x1b[0m            List scheduled tasks and recurring frequencies\n  \x1b[33mcache:clear\x1b[0m              Flush application cache\n  \x1b[33mmake:token [Name]\x1b[0m        Generate an API Personal Access Token\n  \x1b[33mtoken:list\x1b[0m               List active Personal Access Tokens\n  \x1b[33mtoken:revoke [ID]\x1b[0m        Revoke a Personal Access Token\n  \x1b[33mstudio\x1b[0m                   Launch Terminal UI Studio & live Database/Cache Inspector\n  \x1b[33mmake:sdk [--lang=ts|openapi]\x1b[0m Export typed TypeScript client or OpenAPI 3.0.3 contract\n  \x1b[33mmake:job <Name>\x1b[0m          Scaffold a background Queue Job\n  \x1b[33mmake:mail <Name>\x1b[0m         Scaffold a Transactional Mail notification\n  \x1b[33mws:serve\x1b[0m                 Start standalone WebSocket broadcasting server\n  \x1b[33mqueue:work\x1b[0m               Start processing background queue jobs\n  \x1b[33mmail:outbox\x1b[0m              Inspect sent transactional emails\n  \x1b[33mtheme:preview\x1b[0m            Preview theme colors, palettes, and font families\n  \x1b[33magent:guide [--json]\x1b[0m     Display agent-native architecture specification\n  \x1b[33mversion\x1b[0m                  Show Terminus CLI version\n\n\x1b[1mExamples:\x1b[0m\n  terminus route:list\n  terminus tinker\n  terminus make:model Product -mc\n  terminus make:controller OrderController --resource\n  terminus make:seeder ProductSeeder\n  terminus migrate:status\n  terminus migrate:rollback\n  terminus schedule:run\n  terminus new my_project\n  terminus studio\n");
+    println!("Usage:\n  terminus <command> [arguments]\n\n\x1b[1mAvailable Commands:\x1b[0m\n  \x1b[33mnew [name] [--preset=...] [--frontend=...]\x1b[0m Scaffold a new Terminus project (interactive wizard or flags)\n  \x1b[33mschema [--json]\x1b[0m          Inspect complete application topology (models, routes, admin)\n  \x1b[33mroute:list | routes\x1b[0m      List registered web routes, admin resources & API endpoints\n  \x1b[33mtinker [--execute=...]\x1b[0m   Interactive database REPL & command console\n  \x1b[33mmake:controller <Name> [-r]\x1b[0m Scaffold a Controller (or RESTful resource controller)\n  \x1b[33mmake:model <Name> [-mc]\x1b[0m  Scaffold a Model (with optional -m migration, -c controller)\n  \x1b[33mmake:seeder <Name>\x1b[0m       Scaffold a database Seeder class\n  \x1b[33mmake:slice <Name> [--fields=...]\x1b[0m Scaffold a full-stack vertical domain slice (DDD)\n  \x1b[33mmake:resource <Name>\x1b[0m     Scaffold a new Admin Resource with table & form\n  \x1b[33mmake:module <Name>\x1b[0m       Scaffold an Enterprise Modular (DDD) domain module\n  \x1b[33mmake:repo <Name>\x1b[0m         Scaffold a SQLite repository implementation\n  \x1b[33mmake:migration <Name>\x1b[0m    Generate a timestamped SQL migration file\n  \x1b[33mmigrate\x1b[0m                  Run pending database migrations\n  \x1b[33mmigrate:status\x1b[0m           Show execution status of each migration batch\n  \x1b[33mmigrate:rollback\x1b[0m         Rollback the latest migration batch\n  \x1b[33mdb:seed\x1b[0m                  Seed demo accounts and orders into database\n  \x1b[33mdb:tables\x1b[0m                Inspect SQLite database tables, schema, and row counts\n  \x1b[33mschedule:run\x1b[0m             Run due scheduled tasks and recurring cron jobs\n  \x1b[33mschedule:list\x1b[0m            List scheduled tasks and recurring frequencies\n  \x1b[33mcache:clear\x1b[0m              Flush application cache\n  \x1b[33mmake:token [Name]\x1b[0m        Generate an API Personal Access Token\n  \x1b[33mtoken:list\x1b[0m               List active Personal Access Tokens\n  \x1b[33mtoken:revoke [ID]\x1b[0m        Revoke a Personal Access Token\n  \x1b[33mmake:sdk [--lang=ts|openapi]\x1b[0m Export typed TypeScript client or OpenAPI 3.0.3 contract\n  \x1b[33mmake:job <Name>\x1b[0m          Scaffold a background Queue Job\n  \x1b[33mmake:mail <Name>\x1b[0m         Scaffold a Transactional Mail notification\n  \x1b[33mws:serve\x1b[0m                 Start standalone WebSocket broadcasting server\n  \x1b[33mqueue:work\x1b[0m               Start processing background queue jobs\n  \x1b[33mmail:outbox\x1b[0m              Inspect sent transactional emails\n  \x1b[33mtheme:preview\x1b[0m            Preview theme colors, palettes, and font families\n  \x1b[33magent:guide [--json]\x1b[0m     Display agent-native architecture specification\n  \x1b[33mversion\x1b[0m                  Show Terminus CLI version\n\n\x1b[1mExamples:\x1b[0m\n  terminus route:list\n  terminus tinker\n  terminus make:model Product -mc\n  terminus make:controller OrderController --resource\n  terminus make:seeder ProductSeeder\n  terminus migrate:status\n  terminus migrate:rollback\n  terminus schedule:run\n  terminus new my_project\n");
 }
 
 fn print_version() {
@@ -252,9 +245,8 @@ impl Resource for {singular}Resource {{
     }}
 
     // Record policy hook
-    #[allow(non_snake_case)]
-    fn canEditRow(&self, user: &User, row: &RowData) -> bool {{
-        if !self.canEdit(user) {{
+    fn can_edit_row(&self, user: &User, row: &RowData) -> bool {{
+        if !self.can_edit(user) {{
             return false;
         }}
         row.get("status") != Some("archived")
@@ -840,9 +832,8 @@ impl Resource for {singular}Resource {{
         self.repo.delete(id)
     }}
 
-    #[allow(non_snake_case)]
-    fn canEditRow(&self, user: &User, row: &RowData) -> bool {{
-        if !self.canEdit(user) {{
+    fn can_edit_row(&self, user: &User, row: &RowData) -> bool {{
+        if !self.can_edit(user) {{
             return false;
         }}
         row.get("status") != Some("archived")
@@ -925,29 +916,6 @@ fn generate_module_mod_rs(singular: &str, slug: &str, components: &[&str]) -> St
 
     out.push_str("}\n");
     out
-}
-
-fn run_studio(db_path: &str, is_watch: bool, is_once: bool, tab_arg: Option<u8>) {
-    let mut app = terminus::studio::StudioApp::new(db_path);
-    if let Some(tab) = tab_arg {
-        app.active_tab = tab;
-    }
-
-    if is_once {
-        print!("{}", app.render_screen());
-        return;
-    }
-
-    if is_watch {
-        if let Err(e) = app.run_watch(2) {
-            eprintln!("\x1b[31mError running Studio watch mode:\x1b[0m {e}");
-        }
-        return;
-    }
-
-    if let Err(e) = app.run_interactive() {
-        eprintln!("\x1b[31mError running Studio interactive mode:\x1b[0m {e}");
-    }
 }
 
 fn make_controller(name_opt: Option<&str>, is_resource: bool) {
@@ -2295,7 +2263,7 @@ fn run_new_project(
             println!("  1. cd {}", app_name);
             println!("  2. cargo terminus migrate        \x1b[90m# Run initial database migrations\x1b[0m");
             println!("  3. cargo run                     \x1b[90m# Start server on http://localhost:{}\x1b[0m", config.port);
-            println!("  4. cargo terminus studio         \x1b[90m# Launch interactive Terminal UI inspector\x1b[0m");
+            println!("  4. cargo terminus tinker         \x1b[90m# Open interactive database REPL\x1b[0m");
             println!();
         }
         Err(e) => {
@@ -2403,7 +2371,7 @@ fn print_agent_guide(is_json: bool) {
                 "make_resource": "terminus make:resource <Entity>",
                 "make_sdk": "terminus make:sdk --lang=ts|swift|kotlin|openapi",
                 "migrate": "terminus migrate",
-                "studio": "terminus studio"
+                "tinker": "terminus tinker"
             }
         });
         println!("{}", serde_json::to_string_pretty(&guide).unwrap());

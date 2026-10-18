@@ -407,30 +407,40 @@ Key takeaway: Terminus is built directly on Axum. When using Terminus Core, HTTP
 
 ---
 
-## Terminal UI Studio (`terminus studio`)
+## Interactive Database REPL (`terminus tinker`)
 
-Terminus includes an interactive cross-platform terminal dashboard to inspect database tables, active tokens, and service health directly in your terminal:
+Terminus includes an interactive console to inspect database tables, execute SQL queries, test password hashing, and evaluate route configurations directly in your terminal:
 
 ```bash
-terminus studio
+terminus tinker
 ```
 
 ```text
 ================================================================================
-  TERMINUS STUDIO — Terminal Telemetry, Database & Cache Inspector
-  ONLINE  |  DB: CONNECTED (SQLite)  |  HOST: 127.0.0.1:3000
+  TERMINUS TINKER — Interactive Database Console & REPL
+  DB: CONNECTED (SQLite) | terminus.db
 ================================================================================
-   [1] Overview  [2] Database  [3] Cache  [4] Queue  [5] API Tokens
---------------------------------------------------------------------------------
-[TELEMETRY] SYSTEM TELEMETRY & SERVICE HEALTH:
+Commands: tables | schema <table> | routes | seed | hash <password> | exit
 
-  ┌──────────────────────┬──────────────────────┬──────────────────────┐
-  │ DATABASE (SQLite)    │ CACHE & STORE        │ QUEUE & JOBS         │
-  │ Active Connections   │ In-Memory Store      │ 0 Pending Jobs       │
-  │ Path: terminus.db    │ Sub-millisecond TTL  │ Worker: Idle / Ready │
-  └──────────────────────┴──────────────────────┴──────────────────────┘
+>>> tables
+[users, orders, personal_access_tokens, _terminus_cache, _terminus_jobs]
 
-Shortcuts: [1-5] Switch Tab  [R] Refresh  [T <table_name>] Select Table  [Q] Exit
+>>> SELECT id, name, email, role FROM users LIMIT 2;
++----+-------------+--------------------+------------+
+| id | name        | email              | role       |
++----+-------------+--------------------+------------+
+| 1  | Admin User  | admin@example.com  | superadmin |
+| 2  | Test Member | member@example.com | member     |
++----+-------------+--------------------+------------+
+
+>>> hash secretpassword
+$argon2id$v=19$m=19456,t=2,p=1$ZGV2c2FsdDEyMzQ1Njc4$U54m...
+```
+
+You can also execute one-off expressions directly from the CLI without entering the interactive prompt:
+
+```bash
+terminus tinker --execute="SELECT count(*) FROM users"
 ```
 
 ---
@@ -454,7 +464,6 @@ terminus <command> [options]
 | `make:seeder <Name>` | Scaffold a database seeder class |
 | `make:slice <Name> [--fields=...]` | Scaffold a self-contained vertical domain slice |
 | `agent:guide [--json]` | Display AI agent conventions and architecture directives |
-| `studio` | Launch terminal UI telemetry dashboard and database inspector |
 | `make:resource <Name>` | Scaffold an administrative resource |
 | `make:module <Name>` | Scaffold a domain module |
 | `make:repo <Name>` | Scaffold a SQLite repository implementation |

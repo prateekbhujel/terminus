@@ -307,7 +307,7 @@ impl App {
         r
     }
 
-    /// Start the server and listen on the configured interface
+    /// Start the server and listen on the configured interface with graceful shutdown
     pub async fn run(self) -> Result<(), Box<dyn std::error::Error>> {
         let effective_port = std::env::var("PORT")
             .ok()
@@ -319,9 +319,16 @@ impl App {
 
         let router = self.build();
         let listener = tokio::net::TcpListener::bind(addr).await?;
-        axum::serve(listener, router).await?;
+        axum::serve(listener, router)
+            .with_graceful_shutdown(shutdown_signal())
+            .await?;
         Ok(())
     }
+}
+
+async fn shutdown_signal() {
+    let _ = tokio::signal::ctrl_c().await;
+    println!("\n  Terminus application shutting down gracefully...");
 }
 
 /// JSON HTTP response helper for ergonomic response construction

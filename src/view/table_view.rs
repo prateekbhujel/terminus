@@ -88,9 +88,9 @@ pub fn render_table_partial(resource: &dyn Resource, query: &QueryState, user: &
         let mode = resource.form_mode();
 
         for (idx, row) in rows.iter().enumerate() {
-            let can_edit = resource.canEditRow(user, row);
-            let can_delete = resource.canDeleteRow(user, row);
-            let can_replicate = resource.canReplicateRow(user, row);
+            let can_edit = resource.can_edit_row(user, row);
+            let can_delete = resource.can_delete_row(user, row);
+            let can_replicate = resource.can_replicate_row(user, row);
             let mut row_tds = String::new();
 
             // Row selection checkbox
@@ -198,7 +198,7 @@ pub fn render_table_partial(resource: &dyn Resource, query: &QueryState, user: &
     let prev_disabled = if current_page <= 1 { "opacity-30 pointer-events-none" } else { "" };
     let next_disabled = if current_page >= total_pages || total_pages == 0 { "opacity-30 pointer-events-none" } else { "" };
 
-    let create_btn_html = if resource.canCreate(user) {
+    let create_btn_html = if resource.can_create(user) {
         match resource.form_mode() {
             FormMode::Page => format!(
                 r#"<a href="/admin/{slug}/create" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-100 hover:bg-white text-zinc-900 font-medium text-xs transition-colors shadow-sm">
@@ -248,7 +248,7 @@ pub fn render_table_partial(resource: &dyn Resource, query: &QueryState, user: &
                 slug = resource.slug()
             ));
         } else if ba.id == "delete" {
-            if resource.canDelete(user) {
+            if resource.can_delete(user) {
                 let heading = ba.modal_heading.as_deref().unwrap_or("Delete Selected Records");
                 let desc = ba.modal_description.as_deref().unwrap_or("Are you sure you want to permanently delete all selected records?");
                 bulk_buttons_html.push_str(&format!(

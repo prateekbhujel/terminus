@@ -24,21 +24,6 @@ thread_local! {
     static THREAD_SESSION: RefCell<Option<Session>> = const { RefCell::new(None) };
 }
 
-static GLOBAL_USER: OnceLock<RwLock<Option<User>>> = OnceLock::new();
-fn global_user() -> &'static RwLock<Option<User>> {
-    GLOBAL_USER.get_or_init(|| RwLock::new(None))
-}
-
-static GLOBAL_REQUEST: OnceLock<RwLock<Option<RequestInfo>>> = OnceLock::new();
-fn global_request() -> &'static RwLock<Option<RequestInfo>> {
-    GLOBAL_REQUEST.get_or_init(|| RwLock::new(None))
-}
-
-static GLOBAL_SESSION: OnceLock<RwLock<Option<Session>>> = OnceLock::new();
-fn global_session() -> &'static RwLock<Option<Session>> {
-    GLOBAL_SESSION.get_or_init(|| RwLock::new(None))
-}
-
 static CONFIG_STORE: OnceLock<RwLock<HashMap<String, String>>> = OnceLock::new();
 fn config_store() -> &'static RwLock<HashMap<String, String>> {
     CONFIG_STORE.get_or_init(|| RwLock::new(HashMap::new()))
@@ -174,23 +159,17 @@ pub fn request() -> RequestAccessor {
     RequestAccessor
 }
 
-/// Returns the currently active `RequestInfo` across task, thread, or global scope.
+/// Returns the currently active `RequestInfo` across task or thread scope.
 pub fn request_info() -> Option<RequestInfo> {
     if let Ok(Some(r)) = TASK_REQUEST.try_with(|r| r.clone()) {
         return Some(r);
     }
-    if let Some(r) = THREAD_REQUEST.with(|c| c.borrow().clone()) {
-        return Some(r);
-    }
-    global_request().read().ok().and_then(|r| r.clone())
+    THREAD_REQUEST.with(|c| c.borrow().clone())
 }
 
-/// Sets the current HTTP request info for the active thread and global scope.
+/// Sets the current HTTP request info for the active thread.
 pub fn set_current_request(req: Option<RequestInfo>) {
-    THREAD_REQUEST.with(|c| *c.borrow_mut() = req.clone());
-    if let Ok(mut g) = global_request().write() {
-        *g = req;
-    }
+    THREAD_REQUEST.with(|c| *c.borrow_mut() = req);
 }
 
 /// Runs a closure with the specified `RequestInfo` bound to the thread.
@@ -205,15 +184,12 @@ where
     result
 }
 
-/// Returns the currently authenticated `User` across task, thread, or global scope.
+/// Returns the currently authenticated `User` across task or thread scope.
 pub fn current_user() -> Option<User> {
     if let Ok(Some(u)) = TASK_USER.try_with(|u| u.clone()) {
         return Some(u);
     }
-    if let Some(u) = THREAD_USER.with(|c| c.borrow().clone()) {
-        return Some(u);
-    }
-    global_user().read().ok().and_then(|u| u.clone())
+    THREAD_USER.with(|c| c.borrow().clone())
 }
 
 /// Global helper returning the currently authenticated `User`.
@@ -231,12 +207,9 @@ pub fn user_id() -> Option<String> {
     current_user().map(|u| u.id)
 }
 
-/// Sets the authenticated user for the active thread and global scope.
+/// Sets the authenticated user for the active thread.
 pub fn set_current_user(user: Option<User>) {
-    THREAD_USER.with(|c| *c.borrow_mut() = user.clone());
-    if let Ok(mut g) = global_user().write() {
-        *g = user;
-    }
+    THREAD_USER.with(|c| *c.borrow_mut() = user);
 }
 
 /// Runs a closure with the specified `User` bound to the thread.
@@ -251,7 +224,7 @@ where
     result
 }
 
-/// Returns the currently active `Session` across task, thread, or global scope.
+/// Returns the currently active `Session` across task or thread scope.
 pub fn session() -> Session {
     if let Ok(Some(s)) = TASK_SESSION.try_with(|s| s.clone()) {
         return s;
@@ -259,19 +232,63 @@ pub fn session() -> Session {
     if let Some(s) = THREAD_SESSION.with(|c| c.borrow().clone()) {
         return s;
     }
-    if let Some(s) = global_session().read().ok().and_then(|s| s.clone()) {
-        return s;
-    }
     let s = SessionStore::global().get_or_create(None);
     set_current_session(Some(s.clone()));
     s
 }
 
-/// Sets the current `Session` for the active thread and global scope.
+/// Sets the current `Session` for the active thread.
 pub fn set_current_session(sess: Option<Session>) {
-    THREAD_SESSION.with(|c| *c.borrow_mut() = sess.clone());
-    if let Ok(mut g) = global_session().write() {
-        *g = sess;
+    THREAD_SESSION.with(|c| *c.borrow_mut() = sess);
+}
+
+/// Authenticated User extractor for Axum handlers
+#[derive(Debug, Clone)]
+pub struct AuthUser(pub User);
+
+impl std::ops::Deref for AuthUser {
+    type Target = User;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+#[axum::async_trait]
+impl<S> axum::extract::FromRequestParts<S> for AuthUser
+where
+    S: Send + Sync,
+{
+    type Rejection = AbortError;
+
+    async fn from_request_parts(parts: &mut axum::http::request::Parts, _state: &S) -> std::result::Result<Self, Self::Rejection> {
+        if let Some(user) = parts.extensions.get::<User>() {
+            return Ok(AuthUser(user.clone()));
+        }
+
+        if let Some(user) = current_user() {
+            return Ok(AuthUser(user));
+        }
+
+        Err(AbortError::unauthorized("Authentication required"))
+    }
+}
+
+/// Optional Authenticated User extractor for Axum handlers
+#[derive(Debug, Clone)]
+pub struct MaybeAuthUser(pub Option<User>);
+
+#[axum::async_trait]
+impl<S> axum::extract::FromRequestParts<S> for MaybeAuthUser
+where
+    S: Send + Sync,
+{
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(parts: &mut axum::http::request::Parts, state: &S) -> std::result::Result<Self, Self::Rejection> {
+        match AuthUser::from_request_parts(parts, state).await {
+            Ok(AuthUser(u)) => Ok(MaybeAuthUser(Some(u))),
+            Err(_) => Ok(MaybeAuthUser(None)),
+        }
     }
 }
 

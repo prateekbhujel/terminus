@@ -1,21 +1,16 @@
-//! Multi-Platform Engine: Mobile (Android/iOS), IoT & Desktop
+//! Client Generator & OpenAPI Contract Engine
 //!
-//! Provides active platform adapters, typed SDK code generation (TypeScript, Swift & Kotlin),
-//! offline transaction sync queues for desktop POS/warehouse stations,
-//! hardware HMAC device registration for IoT barcode/RFID scanners,
-//! and push notification dispatchers.
+//! Provides typed TypeScript client generation and standard OpenAPI 3.0.3
+//! specification export from application endpoints and domain types.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
 
 /// Client Platform Kind
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Platform {
     Web,
-    Android,
-    Ios,
-    Iot,
+    Mobile,
     Desktop,
 }
 
@@ -23,130 +18,17 @@ impl Platform {
     /// Detect client platform from HTTP User-Agent string
     pub fn from_user_agent(user_agent: &str) -> Self {
         let ua = user_agent.to_lowercase();
-        if ua.contains("android") {
-            Self::Android
-        } else if ua.contains("iphone") || ua.contains("ipad") || ua.contains("ios") {
-            Self::Ios
-        } else if ua.contains("desktop") || ua.contains("station") || ua.contains("kiosk") || ua.contains("native-client") || ua.contains("tauri") || ua.contains("electron") {
+        if ua.contains("android") || ua.contains("iphone") || ua.contains("ipad") || ua.contains("mobile") {
+            Self::Mobile
+        } else if ua.contains("desktop") || ua.contains("tauri") || ua.contains("electron") {
             Self::Desktop
-        } else if ua.contains("esp32") || ua.contains("arduino") || ua.contains("iot") || ua.contains("scanner") {
-            Self::Iot
         } else {
             Self::Web
         }
     }
 }
 
-// ============================================================================
-// MOBILE ADAPTER: PUSH NOTIFICATIONS & CLIENT SDK GENERATOR
-// ============================================================================
-
-/// Mobile Push Notification Dispatch Envelope (compatible with FCM & APNs)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PushNotification {
-    pub id: String,
-    pub title: String,
-    pub body: String,
-    pub token: String,
-    pub badge: Option<u32>,
-    pub data: HashMap<String, String>,
-}
-
-impl PushNotification {
-    pub fn new(title: impl Into<String>, body: impl Into<String>, token: impl Into<String>) -> Self {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis();
-        Self {
-            id: format!("push_{}", now),
-            title: title.into(),
-            body: body.into(),
-            token: token.into(),
-            badge: Some(1),
-            data: HashMap::new(),
-        }
-    }
-
-    pub fn with_data(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
-        self.data.insert(key.into(), value.into());
-        self
-    }
-
-    pub fn badge(mut self, badge: u32) -> Self {
-        self.badge = Some(badge);
-        self
-    }
-
-    /// Render standard FCM (Firebase Cloud Messaging) v1 payload JSON
-    pub fn to_fcm_payload(&self) -> serde_json::Value {
-        serde_json::json!({
-            "message": {
-                "token": self.token,
-                "notification": {
-                    "title": self.title,
-                    "body": self.body
-                },
-                "data": self.data
-            }
-        })
-    }
-
-    /// Render standard Apple Push Notification service (APNs) JSON dictionary
-    pub fn to_apns_payload(&self) -> serde_json::Value {
-        serde_json::json!({
-            "aps": {
-                "alert": {
-                    "title": self.title,
-                    "body": self.body
-                },
-                "badge": self.badge.unwrap_or(1),
-                "sound": "default"
-            },
-            "custom": self.data
-        })
-    }
-}
-
-/// Push Notification Queue & Dispatcher
-#[derive(Clone, Default)]
-pub struct PushDispatcher {
-    queue: Arc<RwLock<Vec<PushNotification>>>,
-    sent_log: Arc<RwLock<Vec<PushNotification>>>,
-}
-
-impl PushDispatcher {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Enqueue a notification for asynchronous delivery
-    pub fn enqueue(&self, notification: PushNotification) {
-        if let Ok(mut q) = self.queue.write() {
-            q.push(notification);
-        }
-    }
-
-    /// Pending notification count
-    pub fn pending_count(&self) -> usize {
-        self.queue.read().map(|q| q.len()).unwrap_or(0)
-    }
-
-    /// Deliver and drain all pending notifications
-    pub fn deliver_all(&self) -> Vec<String> {
-        let mut delivered = Vec::new();
-        if let Ok(mut q) = self.queue.write() {
-            let drained: Vec<PushNotification> = q.drain(..).collect();
-            for item in drained {
-                delivered.push(item.id.clone());
-                if let Ok(mut log) = self.sent_log.write() {
-                    log.push(item);
-                }
-            }
-        }
-        delivered
-    }
-}
-
-/// Typed Client SDK Endpoint Definition
+/// Endpoint definition for client SDK generators
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SdkEndpoint {
     pub method: String,
@@ -156,190 +38,124 @@ pub struct SdkEndpoint {
     pub description: String,
 }
 
-/// Automatic Typed Client SDK Generator (TypeScript, Swift & Kotlin)
+/// Typed Client SDK & OpenAPI Contract Generator
 #[derive(Debug, Clone)]
 pub struct SdkGenerator {
     pub app_name: String,
-    pub api_version: String,
+    pub version: String,
     pub endpoints: Vec<SdkEndpoint>,
     pub type_schemas: HashMap<String, Vec<(String, String)>>,
 }
 
 impl SdkGenerator {
-    pub fn new(app_name: impl Into<String>, api_version: impl Into<String>) -> Self {
+    pub fn new(app_name: impl Into<String>, version: impl Into<String>) -> Self {
         Self {
             app_name: app_name.into(),
-            api_version: api_version.into(),
+            version: version.into(),
             endpoints: Vec::new(),
             type_schemas: HashMap::new(),
         }
     }
 
+    pub fn type_schema(mut self, name: impl Into<String>, fields: Vec<(&str, &str)>) -> Self {
+        let field_pairs = fields.into_iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        self.type_schemas.insert(name.into(), field_pairs);
+        self
+    }
+
     pub fn endpoint(
         mut self,
-        method: &str,
-        path: &str,
-        request_type: Option<&str>,
-        response_type: &str,
-        description: &str,
+        method: impl Into<String>,
+        path: impl Into<String>,
+        req: Option<&str>,
+        res: impl Into<String>,
+        desc: impl Into<String>,
     ) -> Self {
         self.endpoints.push(SdkEndpoint {
-            method: method.to_uppercase(),
-            path: path.to_string(),
-            request_type: request_type.map(|s| s.to_string()),
-            response_type: response_type.to_string(),
-            description: description.to_string(),
+            method: method.into().to_uppercase(),
+            path: path.into(),
+            request_type: req.map(|r| r.to_string()),
+            response_type: res.into(),
+            description: desc.into(),
         });
         self
     }
 
-    pub fn type_schema(mut self, name: &str, fields: Vec<(&str, &str)>) -> Self {
-        self.type_schemas.insert(
-            name.to_string(),
-            fields.into_iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
-        );
-        self
-    }
-
-    /// Generate clean, idiomatic TypeScript Client SDK
-    pub fn to_typescript(&self) -> String {
-        let mut ts = format!("/**\n * Terminus Client SDK for {}\n * API Version: {}\n * Generated automatically by Terminus Framework.\n */\n\n", self.app_name, self.api_version);
-        
-        // Export interfaces
-        for (name, fields) in &self.type_schemas {
-            ts.push_str(&format!("export interface {} {{\n", name));
-            for (field, f_type) in fields {
-                ts.push_str(&format!("  {}: {};\n", field, f_type));
-            }
-            ts.push_str("}\n\n");
-        }
-
-        // Export Client Class
-        ts.push_str(&format!(
-            r#"export class {}Client {{
-  private baseUrl: string;
-  private token: string | null = null;
-
-  constructor(baseUrl: string = "http://127.0.0.1:3000") {{
-    this.baseUrl = baseUrl.replace(/\/$/, "");
-  }}
-
-  public setToken(token: string): void {{
-    this.token = token;
-  }}
-
-  private async request<T>(method: string, path: string, body?: any): Promise<T> {{
-    const headers: Record<string, string> = {{
-      "Content-Type": "application/json",
-      "Accept": "application/json",
-    }};
-    if (this.token) {{
-      headers["Authorization"] = `Bearer ${{this.token}}`;
-    }}
-
-    const response = await fetch(`${{this.baseUrl}}${{path}}`, {{
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
-    }});
-
-    if (!response.ok) {{
-      throw new Error(`API Error: ${{response.status}} ${{response.statusText}}`);
-    }}
-
-    return (await response.json()) as T;
-  }}
-"#,
-            self.app_name.replace(' ', "")
-        ));
-
-        // Methods
-        for ep in &self.endpoints {
-            let func_name = ep.path.trim_start_matches('/').replace('/', "_").replace(':', "");
-            let req_arg = if let Some(rt) = &ep.request_type {
-                format!("data: {}", rt)
-            } else {
-                String::new()
-            };
-            let body_param = if ep.request_type.is_some() { "data" } else { "undefined" };
-
-            ts.push_str(&format!(
-                r#"
-  /** {} */
-  public async {}_{}({}): Promise<{}> {{
-    return this.request<{}>("{}", "{}", {});
-  }}
-"#,
-                ep.description,
-                ep.method.to_lowercase(),
-                func_name,
-                req_arg,
-                ep.response_type,
-                ep.response_type,
-                ep.method,
-                ep.path,
-                body_param
-            ));
-        }
-
-        ts.push_str("}\n");
-        ts
-    }
-
-    /// Generate standard OpenAPI 3.0.3 specification JSON
+    /// Generate an OpenAPI 3.0.3 compliant specification JSON object
     pub fn to_openapi_json(&self) -> serde_json::Value {
         let mut paths = serde_json::Map::new();
-        for ep in &self.endpoints {
-            let mut method_obj = serde_json::json!({
-                "summary": ep.description,
-                "operationId": format!("{}_{}", ep.method.to_lowercase(), ep.path.trim_start_matches('/').replace('/', "_")),
-                "responses": {
-                    "200": {
-                        "description": "Successful response",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "title": ep.response_type
-                                }
-                            }
-                        }
-                    }
-                }
-            });
 
-            if let Some(ref req_t) = ep.request_type {
-                method_obj["requestBody"] = serde_json::json!({
-                    "required": true,
+        for ep in &self.endpoints {
+            let method_lower = ep.method.to_lowercase();
+            let mut operation = serde_json::Map::new();
+            operation.insert("summary".to_string(), serde_json::Value::String(ep.description.clone()));
+            operation.insert(
+                "operationId".to_string(),
+                serde_json::Value::String(format!(
+                    "{}_{}",
+                    method_lower,
+                    ep.path.replace('/', "_").trim_start_matches('_')
+                )),
+            );
+
+            // Request body if present
+            if let Some(req_type) = &ep.request_type {
+                let mut content = serde_json::Map::new();
+                content.insert(
+                    "application/json".to_string(),
+                    serde_json::json!({
+                        "schema": {
+                            "type": "object",
+                            "description": req_type
+                        }
+                    }),
+                );
+                operation.insert(
+                    "requestBody".to_string(),
+                    serde_json::json!({
+                        "required": true,
+                        "content": content
+                    }),
+                );
+            }
+
+            // Responses
+            let mut responses = serde_json::Map::new();
+            responses.insert(
+                "200".to_string(),
+                serde_json::json!({
+                    "description": "Successful response",
                     "content": {
                         "application/json": {
                             "schema": {
                                 "type": "object",
-                                "title": req_t
+                                "description": ep.response_type
                             }
                         }
                     }
-                });
-            }
+                }),
+            );
+            operation.insert("responses".to_string(), serde_json::Value::Object(responses));
 
-            let path_entry = paths.entry(ep.path.clone()).or_insert_with(|| serde_json::json!({}));
-            if let Some(map) = path_entry.as_object_mut() {
-                map.insert(ep.method.to_lowercase(), method_obj);
-            }
+            let mut method_map = serde_json::Map::new();
+            method_map.insert(method_lower, serde_json::Value::Object(operation));
+            paths.insert(ep.path.clone(), serde_json::Value::Object(method_map));
         }
 
+        // Components schemas
         let mut schemas = serde_json::Map::new();
         for (name, fields) in &self.type_schemas {
-            let mut props = serde_json::Map::new();
-            for (f_name, f_type) in fields {
-                props.insert(
-                    f_name.clone(),
+            let mut properties = serde_json::Map::new();
+            for (fname, ftype) in fields {
+                let openapi_type = match ftype.as_str() {
+                    "number" | "u32" | "i64" | "f64" => "number",
+                    "boolean" | "bool" => "boolean",
+                    _ => "string",
+                };
+                properties.insert(
+                    fname.clone(),
                     serde_json::json!({
-                        "type": match f_type.as_str() {
-                            "number" | "Double" => "number",
-                            "boolean" | "Bool" => "boolean",
-                            _ => "string"
-                        }
+                        "type": openapi_type
                     }),
                 );
             }
@@ -347,7 +163,7 @@ impl SdkGenerator {
                 name.clone(),
                 serde_json::json!({
                     "type": "object",
-                    "properties": props
+                    "properties": properties
                 }),
             );
         }
@@ -356,13 +172,119 @@ impl SdkGenerator {
             "openapi": "3.0.3",
             "info": {
                 "title": self.app_name,
-                "version": self.api_version,
-                "description": "API specification generated automatically by Terminus Framework."
+                "version": self.version,
+                "description": "Auto-generated OpenAPI 3.0.3 contract from Terminus application routes"
             },
             "paths": paths,
             "components": {
                 "schemas": schemas
             }
         })
+    }
+
+    /// Generate strongly-typed TypeScript client SDK
+    pub fn to_typescript(&self) -> String {
+        let mut ts = String::new();
+        ts.push_str(&format!("// Auto-generated TypeScript Client for {}\n", self.app_name));
+        ts.push_str(&format!("// API Version: {}\n\n", self.version));
+
+        // Generate TypeScript interfaces
+        for (name, fields) in &self.type_schemas {
+            ts.push_str(&format!("export interface {} {{\n", name));
+            for (fname, ftype) in fields {
+                ts.push_str(&format!("  {}: {};\n", fname, ftype));
+            }
+            ts.push_str("}\n\n");
+        }
+
+        // Generate API Client Class
+        let class_name = {
+            let sanitized: String = self.app_name
+                .split(|c: char| !c.is_alphanumeric())
+                .filter(|s| !s.is_empty())
+                .map(|s| {
+                    let mut c = s.chars();
+                    match c.next() {
+                        None => String::new(),
+                        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+                    }
+                })
+                .collect();
+            if sanitized.is_empty() {
+                "TerminusClient".to_string()
+            } else {
+                format!("{}Client", sanitized)
+            }
+        };
+        ts.push_str(&format!("export class {} {{\n", class_name));
+        ts.push_str("  private baseUrl: string;\n");
+        ts.push_str("  private token?: string;\n\n");
+        ts.push_str("  constructor(baseUrl: string = '', token?: string) {\n");
+        ts.push_str("    this.baseUrl = baseUrl.replace(/\\/$/, '');\n");
+        ts.push_str("    this.token = token;\n");
+        ts.push_str("  }\n\n");
+
+        ts.push_str("  private async request<T>(method: string, path: string, body?: any): Promise<T> {\n");
+        ts.push_str("    const headers: Record<string, string> = {\n");
+        ts.push_str("      'Content-Type': 'application/json',\n");
+        ts.push_str("      'Accept': 'application/json',\n");
+        ts.push_str("    };\n");
+        ts.push_str("    if (this.token) {\n");
+        ts.push_str("      headers['Authorization'] = `Bearer ${this.token}`;\n");
+        ts.push_str("    }\n");
+        ts.push_str("    const res = await fetch(`${this.baseUrl}${path}`, {\n");
+        ts.push_str("      method,\n");
+        ts.push_str("      headers,\n");
+        ts.push_str("      body: body ? JSON.stringify(body) : undefined,\n");
+        ts.push_str("    });\n");
+        ts.push_str("    if (!res.ok) {\n");
+        ts.push_str("      const err = await res.json().catch(() => ({ message: res.statusText }));\n");
+        ts.push_str("      throw new Error(err.message || `Request failed with status ${res.status}`);\n");
+        ts.push_str("    }\n");
+        ts.push_str("    return res.json();\n");
+        ts.push_str("  }\n\n");
+
+        for ep in &self.endpoints {
+            let fn_name = format!(
+                "{}{}",
+                ep.method.to_lowercase(),
+                ep.path
+                    .split('/')
+                    .filter(|s| !s.is_empty())
+                    .map(|s| {
+                        let mut c = s.chars();
+                        match c.next() {
+                            None => String::new(),
+                            Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+                        }
+                    })
+                    .collect::<String>()
+            );
+
+            ts.push_str(&format!("  /** {} */\n", ep.description));
+            if let Some(req) = &ep.request_type {
+                ts.push_str(&format!(
+                    "  async {}(data: {}): Promise<{}> {{\n",
+                    fn_name, req, ep.response_type
+                ));
+                ts.push_str(&format!(
+                    "    return this.request<{}>('{}', '{}', data);\n",
+                    ep.response_type, ep.method, ep.path
+                ));
+            } else {
+                ts.push_str(&format!(
+                    "  async {}(): Promise<{}> {{\n",
+                    fn_name, ep.response_type
+                ));
+                ts.push_str(&format!(
+                    "    return this.request<{}>('{}', '{}');\n",
+                    ep.response_type, ep.method, ep.path
+                ));
+            }
+            ts.push_str("  }\n\n");
+        }
+
+        ts.push_str("}\n");
+        ts
     }
 }

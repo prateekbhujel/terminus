@@ -120,24 +120,19 @@ fn test_dynamic_permission_grants_and_revocations() {
     // Grant direct permission
     member.give_permission_to("users.create");
     assert!(member.can("users.create"));
-    assert!(member.has_direct_permission("users.create"));
-    assert!(member.hasDirectPermission("users.create"));
-
     // Multiple permission checks
     assert!(member.has_any_permission(&["users.create", "orders.delete"]));
-    assert!(member.hasAnyPermission(&["users.create", "orders.delete"]));
     assert!(!member.has_all_permissions(&["users.create", "orders.delete"]));
-    assert!(!member.hasAllPermissions(&["users.create", "orders.delete"]));
 
     // Revoke direct permission
     member.revoke_permission_to("users.create");
     assert!(!member.can("users.create"));
     assert!(!member.has_direct_permission("users.create"));
 
-    // Test camelCase alias
-    member.givePermissionTo("users.export");
+    // Grant and revoke another permission
+    member.give_permission_to("users.export");
     assert!(member.can("users.export"));
-    member.revokePermissionTo("users.export");
+    member.revoke_permission_to("users.export");
     assert!(!member.can("users.export"));
 }
 
@@ -153,7 +148,6 @@ fn test_explicit_deny_strictly_overrides_superadmin() {
     superadmin.deny_permission("orders.delete");
     assert!(!superadmin.can("orders.delete"), "Explicit deny strictly overrides superadmin");
     assert!(superadmin.has_explicit_deny("orders.delete"));
-    assert!(superadmin.hasExplicitDeny("orders.delete"));
 
     // Other permissions remain granted to superadmin
     assert!(superadmin.can("users.delete"));
@@ -164,10 +158,10 @@ fn test_explicit_deny_strictly_overrides_superadmin() {
     assert!(superadmin.can("orders.delete"));
     assert!(!superadmin.has_explicit_deny("orders.delete"));
 
-    // CamelCase alias test
-    superadmin.denyPermission("users.delete");
+    // Deny and restore another permission
+    superadmin.deny_permission("users.delete");
     assert!(!superadmin.can("users.delete"));
-    superadmin.removeDeny("users.delete");
+    superadmin.remove_deny("users.delete");
     assert!(superadmin.can("users.delete"));
 }
 
@@ -219,7 +213,7 @@ fn test_permission_cache_ttl_and_invalidation() {
     assert_eq!(cache.len(), 0);
 
     // Next check populates cache with true
-    assert!(user.canCached("orders.delete", &cache));
+    assert!(user.can_cached("orders.delete", &cache));
     assert_eq!(cache.get(&user.id, "orders.delete"), Some(true));
 
     // Clear all

@@ -51,20 +51,10 @@ impl Query {
         self
     }
 
-    #[allow(non_snake_case)]
-    pub fn whereEq(self, column: impl Into<String>, value: impl Into<String>) -> Self {
-        self.where_eq(column, value)
-    }
-
     /// Add a not-equals where clause
     pub fn where_neq(mut self, column: impl Into<String>, value: impl Into<String>) -> Self {
         self.wheres.push(WhereClause::Neq(column.into(), value.into()));
         self
-    }
-
-    #[allow(non_snake_case)]
-    pub fn whereNeq(self, column: impl Into<String>, value: impl Into<String>) -> Self {
-        self.where_neq(column, value)
     }
 
     /// Add a LIKE where clause
@@ -73,20 +63,10 @@ impl Query {
         self
     }
 
-    #[allow(non_snake_case)]
-    pub fn whereLike(self, column: impl Into<String>, pattern: impl Into<String>) -> Self {
-        self.where_like(column, pattern)
-    }
-
     /// Add a greater-than clause
     pub fn where_gt(mut self, column: impl Into<String>, value: impl Into<String>) -> Self {
         self.wheres.push(WhereClause::Gt(column.into(), value.into()));
         self
-    }
-
-    #[allow(non_snake_case)]
-    pub fn whereGt(self, column: impl Into<String>, value: impl Into<String>) -> Self {
-        self.where_gt(column, value)
     }
 
     /// Order by a column
@@ -98,11 +78,6 @@ impl Query {
         };
         self.order_by = Some((column.into(), dir));
         self
-    }
-
-    #[allow(non_snake_case)]
-    pub fn orderBy(self, column: impl Into<String>, direction: &str) -> Self {
-        self.order_by(column, direction)
     }
 
     /// Set limit
@@ -183,10 +158,5 @@ impl Query {
         }
 
         (sql, bindings)
-    }
-
-    #[allow(non_snake_case)]
-    pub fn toSql(&self) -> (String, Vec<String>) {
-        self.to_sql()
     }
 }
