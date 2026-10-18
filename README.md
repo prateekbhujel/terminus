@@ -1,8 +1,8 @@
 # Terminus
 
-**An agent-native, batteries-included application framework for Axum and Rust.**
+**The agent-native, batteries-included application framework for Axum and Rust.**
 
-Fullstack Web Admin • REST API • Multi-DB (PostgreSQL, MySQL, MongoDB, Redis, SQLite) • Native Mobile (iOS/Android) • Native Desktop & IoT
+Web Admin • Embedded SQLite Persistence • HMAC Sessions • Compile-Time Validation • Deterministic Machine Introspection
 
 [![CI](https://github.com/prateekbhujel/terminus/actions/workflows/rust.yml/badge.svg)](https://github.com/prateekbhujel/terminus/actions/workflows/rust.yml)
 [![Version: 0.1.0](https://img.shields.io/badge/crates.io-v0.1.0-emerald.svg)](https://crates.io/crates/terminus-framework)
@@ -13,12 +13,12 @@ Fullstack Web Admin • REST API • Multi-DB (PostgreSQL, MySQL, MongoDB, Redis
 
 ## Why Terminus?
 
-[Axum](https://github.com/tokio-rs/axum) is a world-class, high-performance web router. But it is intentionally minimal. For production applications, developers repeatedly re-implement the same foundational layers from scratch:
+[Axum](https://github.com/tokio-rs/axum) is a world-class, high-performance web router. But it is intentionally minimal. For production web services, developers repeatedly re-implement the same foundational layers from scratch:
 
 - An administrative dashboard and CRUD interfaces
-- Multi-database persistence, connection management, and migrations
+- SQLite database connection management and batch migrations
 - Request validation with structured JSON error responses
-- Authentication, dynamic RBAC, and personal access tokens
+- Signed session cookies, CSRF protection, and flash message bags
 - **Deterministic machine introspection**, so autonomous AI coding agents can inspect models, routes, and database tables without hallucination
 
 Terminus provides strong conventions and full-stack solutions to these needs, designed from first principles around what makes sense in Rust.
@@ -46,21 +46,20 @@ irm https://raw.githubusercontent.com/prateekbhujel/terminus/main/install.ps1 | 
 cargo install terminus-framework
 ```
 
-Once installed, scaffold a production-ready application from anywhere:
+Scaffold a production-ready application from anywhere:
 
 ```bash
 # Interactive project wizard
 terminus new my_app
 
-# Or scaffold non-interactively with specific presets
-terminus new my_app --preset=fullstack
-terminus new my_omni --targets=web,desktop,mobile
+# Or scaffold non-interactively
+terminus new my_app --preset=fullstack --port=3000
 
 cd my_app
 cargo run
 ```
 
-Open `http://localhost:3000` in your browser. Browse to `http://localhost:3000/admin` to see the live admin dashboard backed by SQLite.
+Open `http://localhost:3000` in your browser. Browse to `http://localhost:3000/admin` to inspect the admin dashboard backed by embedded SQLite.
 
 ### Method 2: Run the Working Quickstart Example
 
@@ -80,6 +79,7 @@ Add Terminus to your `Cargo.toml`:
 [dependencies]
 terminus-framework = "0.1.0"
 tokio = { version = "1", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ```
 
@@ -101,14 +101,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     App::new()
         .name("My Application")
         .port(3000)
-        .get("/", || async {
-            html_response("<h1>Welcome to Terminus!</h1><p><a href='/admin'>Admin Panel &rarr;</a></p>")
-        })
-        .get("/api/health", || async {
-            json_response(serde_json::json!({ "status": "ok", "timestamp": now() }))
-        })
+        .database(db)
         .panel(admin)
-        .spec_endpoint("/api/_spec")
         .run()
         .await
 }
@@ -118,7 +112,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Killer Feature: Deterministic Machine Introspection
 
-In a world where developers pair program with autonomous AI coding agents, agents frequently hallucinate route names, database columns, and model relationships because they must guess across dozens of files.
+When developers pair program with autonomous AI coding agents, agents frequently hallucinate route names, database columns, and model relationships because they must guess across dozens of files.
 
 Terminus solves this with **deterministic application introspection**:
 
@@ -161,33 +155,7 @@ terminus schema
 
 ---
 
-## Full-Stack Vertical Domain Slices
-
-In classical MVC frameworks, adding a single entity requires scattering code across migrations, models, controllers, requests, routes, and admin panels.
-
-Terminus groups features into self-contained vertical domain slices under `src/modules/<slug>/`:
-
-```bash
-terminus make:slice Order --fields="customer_id:string,total:f64,status:string"
-```
-
-Generates:
-- `mod.rs`: `AppModule` implementation mounting API routes and returning admin `Resource`.
-- `model.rs`: Typed domain struct with `camelCase` serde serialization.
-- `repository.rs`: Strongly-typed repository trait and SQLite store with CRUD methods.
-- `request.rs`: Request DTOs with compile-time type-safe `Validator`.
-- `controller.rs`: Axum REST handlers returning `ApiResponse<T>`.
-- `resource.rs`: Admin panel resource with searchable and sortable columns.
-- `migration.sql`: Typed database table definition.
-
-To register the slice in `src/main.rs`:
-```rust
-app = app.module(OrderModule::new(repo));
-```
-
----
-
-## Compile-Time Type-Safe Validation
+## Compile-Time Type-Safe Validation (`Valid<T>`)
 
 Classical web frameworks use stringly-typed rules like `"required|email|max:255"`, which fail silently at runtime if an agent or developer makes a typo.
 
@@ -203,19 +171,37 @@ pub struct CreateUserRequest {
     pub age: Option<u32>,
 }
 
-impl CreateUserRequest {
-    pub fn validate(&self) -> Result<&Self, ValidationErrors> {
-        Validator::new(self)
-            .rule("email", |r| !r.email.is_empty(), "Email is required")
-            .rule("email", |r| r.email.contains('@'), "Valid email address required")
-            .rule("name", |r| r.name.len() >= 2, "Name must be at least 2 characters")
-            .rule_when(|r| r.age.is_some(), "age", |r| r.age.unwrap() >= 18, "Must be at least 18")
-            .validate()
+impl Validate for CreateUserRequest {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        let mut errors = ValidationErrors::new();
+        if self.name.trim().is_empty() {
+            errors.add("name", "Name is required");
+        }
+        if !self.email.contains('@') {
+            errors.add("email", "Valid email address required");
+        }
+        if let Some(age) = self.age {
+            if age < 18 {
+                errors.add("age", "Must be at least 18 years old");
+            }
+        }
+        if errors.is_empty() { Ok(()) } else { Err(errors) }
     }
 }
 ```
 
-When validation fails, `ValidationErrors` implements Axum's `IntoResponse`, automatically returning HTTP 422 with structured JSON:
+### The `Valid<T>` Extractor
+
+Extract, deserialize, and validate request payloads in a single handler argument. If validation fails, Terminus halts request execution and returns an HTTP 422 response with structured JSON:
+
+```rust
+pub async fn store(Valid(payload): Valid<CreateUserRequest>) -> Result<Redirect> {
+    // Execution only reaches here if payload passed all validation checks!
+    Ok(redirect("/users").with_success("User created successfully!"))
+}
+```
+
+HTTP 422 JSON error response:
 
 ```json
 {
@@ -226,190 +212,88 @@ When validation fails, `ValidationErrors` implements Axum's `IntoResponse`, auto
 }
 ```
 
-For untyped JSON payloads, use `JsonValidator`:
-
-```rust
-let mut jv = JsonValidator::new(&payload);
-let email = jv.require_email("email");
-let price = jv.require_number("price");
-jv.validate()?;
-```
-
 ---
 
-## First-Class Ergonomics: `Valid<T>`, `db::query!`, & Multi-Database Engines
+## Embedded SQLite Persistence & Batch Migrations
 
-Terminus bridges high-level developer ergonomics with Rust's memory safety and zero-cost abstractions:
-
-### 1. The `Valid<T>` Extractor & `Validate` Trait
-
-Extract, deserialize, and validate request payloads in a single parameter. If validation fails, Terminus immediately halts request execution and returns an HTTP 422 Unprocessable Entity response containing structured JSON errors:
+Terminus includes a zero-configuration SQLite persistence layer backed by `rusqlite`:
 
 ```rust
 use terminus::prelude::*;
 
-#[derive(Deserialize, Serialize)]
-pub struct Subscriber {
-    pub name: String,
-    pub email: String,
-}
+let db = Database::open("app.db")?;
 
-impl Validate for Subscriber {
-    fn validate(&self) -> Result<(), ValidationErrors> {
-        let mut errors = ValidationErrors::new();
-        if self.name.trim().is_empty() {
-            errors.add("name", "Name is required");
-        }
-        if !self.email.contains('@') {
-            errors.add("email", "Valid email address required");
-        }
-        if errors.is_empty() { Ok(()) } else { Err(errors) }
-    }
-}
-```
+// 1. Raw DDL execution
+db.execute("CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, title TEXT)")?;
 
-### 2. High-Level Controller Handlers & `db::query!`
-
-Handlers can directly return `Result<Redirect>` or `Result<Json<T>>`. Parameterized queries execute with zero boilerplate:
-
-```rust
-pub async fn store(Valid(subscriber): Valid<Subscriber>) -> Result<Redirect> {
-    db::query!(
-        "INSERT INTO subscribers (name, email) VALUES (?, ?)",
-        subscriber.name,
-        subscriber.email
+// 2. Ergonomic parameterized query execution
+let affected = db.with_conn(|conn| {
+    conn.execute(
+        "INSERT INTO items (title) VALUES (?1)",
+        rusqlite::params!["Hardware Scanner Node"],
     )
-    .insert()
-    .await?;
-
-    Ok(redirect("/subscribers"))
-}
+})?;
 ```
 
-### 3. Multi-Database Engines (Postgres, MySQL, Mongo, Redis, SQLite)
+### Batch Migrations & Rollback
 
-Terminus connects to your database with a single connection URL string and automatically compiles parameter markers to match target engine dialects (`?` for SQLite/MySQL, `$1, $2` for PostgreSQL):
-
-```rust
-// Connect to PostgreSQL, MySQL, MongoDB, Redis, or SQLite
-let db = Database::connect("postgres://postgres:secret@localhost:5432/ecommerce")?;
-// Or SQLite file / in-memory
-let db = Database::connect("sqlite://app.db")?;
-
-// MongoDB NoSQL Document Collections
-let events = db.collection("events");
-events.insert_one(serde_json::json!({ "event": "order_placed", "amount": 149.99 }))?;
-
-// Redis Key-Value & Session Store with TTL
-let redis = db.redis();
-redis.set("session:token_xyz", "user_101", Some(3600)); // 1 hour TTL
-let user = redis.get("session:token_xyz");
-```
-
-### 4. Configurable Port Presets & Cloud Deployments
-
-Select ports interactively during `terminus new`, specify via CLI flags (`--port=8080`), or use presets:
-
-```rust
-// Port presets
-let app = App::port_3000(); // Standard web app (3000)
-let app = App::port_8000(); // Microservices backend (8000)
-let app = App::port_8080(); // Cloud proxy / Gateway (8080)
-let app = App::new().port(9000); // Custom port
-
-// Cloud-native: Automatically detects $PORT injected by Docker, Fly.io, Railway, or Render
-app.run().await
-```
-
-### 5. Blade-Style Views, Sessions & One-Time Flash Messages
-
-Render fullstack web views wrapped in responsive Tailwind layouts, with automatic CSRF tokens, flash alert banners, and seamless redirects:
-
-```rust
-use terminus::prelude::*;
-
-// 1. Return a web view with Tailwind layout & flash banner
-pub async fn index() -> impl IntoResponse {
-    view("Dashboard", r#"
-        <div class="space-y-6">
-            <h1 class="text-2xl font-bold text-zinc-100">Welcome to Terminus Web</h1>
-            <p class="text-zinc-400">Zero frontend build step needed. High-converting SSR.</p>
-        </div>
-    "#)
-}
-
-// 2. Redirect with chained flash notifications
-pub async fn store(Valid(payload): Valid<CreateUserRequest>) -> Response {
-    // Save to database...
-    redirect("/users")
-        .with_success("Account created successfully!")
-        .into_response()
-}
-```
-
-### 6. Active Record Pagination (`Paginated<T>`)
-
-Paginate database query results with zero boilerplate:
-
-```rust
-// Paginate query (page 1, 15 per page)
-let paginated: Paginated<RowData> = db::query!("SELECT * FROM orders ORDER BY created_at DESC")
-    .paginate(1, 15)
-    .await?;
-
-// Output accessible Tailwind CSS pagination buttons & page range indicators
-let html_links = paginated.links_html("/orders");
-// Renders: "Showing 1 to 15 of 142 results" with Previous / Page / Next buttons
-```
-
-### 7. Interactive Tinker REPL (`terminus tinker`)
-
-Explore your application, test SQL queries, inspect database schemas, and hash passwords interactively from your terminal:
+Manage database evolution with deterministic SQL migrations:
 
 ```bash
-$ terminus tinker
-Terminus Tinker REPL v0.1.0
-Database: terminus.db (SQLite) | Type 'help' or 'exit'
-
-terminus> tables
-  TABLE NAME                     COLUMNS       ROWS
-  ──────────────────────────────────────────────────────
-  users                                7          4
-  orders                               6          4
-  _terminus_migrations                 4          4
-
-terminus> SELECT id, customer_name, total_cents FROM orders;
-  id | customer_name | total_cents
-  --------------------------------
-  1  | Acme Logistics| 25000
-  2  | Global Corp   | 49900
-(2 row(s) returned)
-
-terminus> hash my_secret_password
-Hash: $argon2id$v=19$m=19456,t=2,p=1$...
+terminus make:migration create_orders_table
 ```
 
-### 8. In-Process Task Scheduling (`terminus schedule:run`)
+Creates timestamped migrations under `migrations/`:
 
-Define background recurring tasks directly in Rust without external cron daemons:
+```sql
+-- migrations/20261018090000_create_orders_table.sql
+CREATE TABLE IF NOT EXISTS orders (
+    id TEXT PRIMARY KEY,
+    customer_name TEXT NOT NULL,
+    total_cents INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+```
 
-```rust
-let schedule = Schedule::new();
+Manage migrations via CLI:
 
-schedule.call("cleanup:sessions", || {
-    SessionStore::global().prune(86400 * 7);
-}).hourly();
-
-schedule.call("orders:sync", || {
-    // Background order processing...
-}).every_five_minutes();
+```bash
+terminus migrate           # Run all pending migrations in a batch
+terminus migrate:status    # Inspect execution batch and timestamp
+terminus migrate:rollback  # Roll back the most recent migration batch
 ```
 
 ---
 
-## Admin Panel Resources
+## Cryptographic HMAC-SHA256 Signed Sessions
 
-Define rich, server-rendered admin interfaces using declarative Rust:
+Terminus features pure-Rust RFC 2104 HMAC-SHA256 session management with zero external C dependencies:
+
+```rust
+use terminus::prelude::*;
+
+let secret = b"production_secret_key_at_least_32_bytes";
+let session = Session::new();
+session.set("user_id", "usr_99182");
+
+// 1. Generate tamper-proof signed cookie header (id.signature)
+let cookie_header = session.signed_cookie_header(secret);
+
+// 2. Constant-time signature verification
+let verified_id = Session::verify_signed_cookie(cookie_val, secret);
+assert_eq!(verified_id, Some(session.id().to_string()));
+```
+
+- **Constant-Time Verification**: Prevents timing attacks when verifying session signatures.
+- **CSRF Protection**: Automatic per-session tokens (`session.csrf_token()`) and verification (`session.verify_csrf_token(&token)`).
+- **One-Time Flash Messages**: Alerts persist across HTTP redirects and clear automatically on subsequent requests.
+
+---
+
+## Server-Rendered Admin Panel
+
+Define rich admin interfaces using declarative Rust:
 
 ```rust
 use terminus::prelude::*;
@@ -445,7 +329,6 @@ impl Resource for ProductResource {
     }
 
     fn fetch_rows(&self, query: &QueryState) -> (Vec<RowData>, usize) {
-        // Query SQLite or in-memory store
         (vec![], 0)
     }
 }
@@ -453,67 +336,74 @@ impl Resource for ProductResource {
 
 ---
 
-## Global Ergonomic Helpers
+## Headless Integration Testing (`TestClient`)
 
-Access common application state from handlers and domain logic:
+Writing HTTP integration tests for web APIs often requires spinning up TCP listeners, managing OS ports, or writing verbose `tower::ServiceExt::oneshot` boilerplate.
+
+Terminus provides an in-memory, headless `TestClient` with fluent assertions:
 
 ```rust
 use terminus::prelude::*;
 
-pub async fn handle_checkout() -> Result<ApiResponse<serde_json::Value>, AbortError> {
-    // 1. Authorization gate
-    abort_unless(can("orders.create"), 403, "Permission Denied")?;
+#[tokio::test]
+async fn test_items_api() {
+    let app = App::new()
+        .get("/api/health", || async {
+            json_response(serde_json::json!({ "status": "ok" }))
+        })
+        .post("/api/items", |Valid(item): Valid<CreateItemRequest>| async move {
+            json_response(serde_json::json!({ "created": true }))
+        });
 
-    // 2. Access active user context
-    if let Some(current_user) = user() {
-        println!("Order by: {}", current_user.name);
-    }
+    let client = TestClient::new(app);
 
-    // 3. Current request data
-    let token = request().input("token").unwrap_or_default();
+    // 1. GET assertion
+    let res = client.get("/api/health").await;
+    res.assert_ok().assert_contains("ok");
 
-    Ok(ApiResponse::ok(serde_json::json!({
-        "status": "success",
-        "timestamp": now()
-    })))
+    // 2. Validation failure assertion (HTTP 422)
+    let invalid = client.post("/api/items", serde_json::json!({})).await;
+    invalid.assert_unprocessable();
 }
 ```
 
 ---
 
-## Dynamic Role-Based Access Control (RBAC)
+## OpenAPI 3.0.3 & TypeScript Client Contracts
 
-```rust
-use terminus::prelude::*;
+Rather than maintaining brittle bespoke SDK generators, Terminus generates standard OpenAPI 3.0.3 specifications and typed TypeScript contracts:
 
-let mut user = User::new("1", "Pratik", "pratik@example.com", Role::Superadmin);
+```bash
+# Export standard OpenAPI 3.0.3 specification
+terminus make:sdk --lang=openapi
 
-// 1. Direct permission grant
-user.give_permission_to("orders.refund");
-
-// 2. Explicit Deny Precedence (Overrides administrative default grants)
-user.deny_permission("finance.export");
-
-assert!(!user.can("finance.export")); // Denied: Explicit deny overrides Superadmin!
-assert!(user.can("orders.view"));     // Allowed: Superadmin default grant
+# Export typed TypeScript client
+terminus make:sdk --lang=ts
 ```
+
+The resulting `openapi.json` can be plugged directly into any industry-standard code generator (`openapi-generator-cli`, `@hey-api/openapi-ts`, or native language generators).
 
 ---
 
-## Password Hashing & Cryptography
+## Empirical Benchmarks: Terminus vs. Plain Axum
 
-Terminus includes pure-Rust cryptographic primitives with zero external C dependencies:
+Run the benchmark suite locally:
 
-- **PBKDF2-HMAC-SHA256 (`Hash::make` & `Hash::check`)** conforming to RFC 2898 / NIST SP 800-132:
-  ```rust
-  use terminus::prelude::*;
+```bash
+cargo run --example benchmark --release
+```
 
-  let hash = Hash::make("secret_password");
-  assert!(Hash::check("secret_password", &hash));
-  assert!(!Hash::check("wrong_password", &hash));
-  ```
-- **Cryptographic Webhook Verification (`WebhookVerifier`)**:
-  Supports Stripe-style timestamped signatures (`t=...,v1=...`), GitHub `sha256=...` signatures, and constant-time comparison to prevent timing attacks.
+Measured in-memory across 50,000 iterations per scenario on Apple Silicon:
+
+| Scenario | Throughput | p50 Latency | p95 Latency | p99 Latency | Framework Overhead |
+|---|---|---|---|---|---|
+| **Plain Axum 0.7 (GET)** | 205,227 req/s | 4.25 µs | 5.58 µs | 6.79 µs | Baseline |
+| **Terminus App (Core Router)** | **206,817 req/s** | **4.38 µs** | **4.54 µs** | **5.62 µs** | **-0.03 µs (<2%)** |
+| **Terminus App (+ CORS Layer)** | 104,214 req/s | 8.92 µs | 9.54 µs | 12.50 µs | +4.54 µs (CORS headers) |
+| **Terminus Fluent Validator** | **7,037,504 ops/s** | **83 ns** | **120 ns** | **210 ns** | Compile-time checking |
+| **Raw Rusqlite SELECT** | 179,421 ops/s | 4.96 µs | 5.25 µs | 20.38 µs | Embedded persistence |
+
+Key takeaway: Terminus is built directly on Axum. When using Terminus Core, HTTP routing latency is virtually identical to plain Axum. You get batteries-included features (Admin panel, machine introspection, request validation, RBAC) with zero performance penalty.
 
 ---
 
@@ -530,13 +420,13 @@ terminus studio
   TERMINUS STUDIO — Terminal Telemetry, Database & Cache Inspector
   ONLINE  |  DB: CONNECTED (SQLite)  |  HOST: 127.0.0.1:3000
 ================================================================================
-   [1] Overview  [2] Database  [3] Cache & Redis  [4] Queue  [5] API Tokens
+   [1] Overview  [2] Database  [3] Cache  [4] Queue  [5] API Tokens
 --------------------------------------------------------------------------------
 [TELEMETRY] SYSTEM TELEMETRY & SERVICE HEALTH:
 
   ┌──────────────────────┬──────────────────────┬──────────────────────┐
-  │ DATABASE (SQLite)    │ CACHE & KEY-VALUE    │ QUEUE & JOBS         │
-  │ Active Connections   │ In-Memory + Redis    │ 0 Pending Jobs       │
+  │ DATABASE (SQLite)    │ CACHE & STORE        │ QUEUE & JOBS         │
+  │ Active Connections   │ In-Memory Store      │ 0 Pending Jobs       │
   │ Path: terminus.db    │ Sub-millisecond TTL  │ Worker: Idle / Ready │
   └──────────────────────┴──────────────────────┴──────────────────────┘
 
@@ -558,7 +448,7 @@ terminus <command> [options]
 | `new [name] [--preset=...]` | Scaffold a new project (interactive wizard or flags) |
 | `schema [--json]` | Inspect application topology (models, routes, admin resources) |
 | `route:list \| routes` | List registered web routes, admin resources, and API endpoints |
-| `tinker [--execute=...]` | Interactive database REPL console with query and command evaluation |
+| `tinker [--execute=...]` | Interactive database REPL console with query evaluation |
 | `make:controller <Name> [-r]` | Scaffold a web controller (or RESTful resource controller) |
 | `make:model <Name> [-mc]` | Scaffold a model with paired migration (-m) and controller (-c) |
 | `make:seeder <Name>` | Scaffold a database seeder class |
@@ -576,95 +466,11 @@ terminus <command> [options]
 | `db:seed` | Seed demo accounts and data into database |
 | `schedule:run` | Execute due scheduled tasks and recurring in-process cron jobs |
 | `schedule:list` | List scheduled tasks and recurring execution frequencies |
-| `make:sdk [--lang=ts\|kotlin\|swift\|openapi]` | Export typed client SDKs (Optional) |
+| `make:sdk [--lang=ts\|openapi]` | Export typed TypeScript client or OpenAPI 3.0.3 specification |
 | `make:token [name]` | Issue a personal access token |
 | `token:list` | List active access tokens |
 | `token:revoke [id]` | Revoke an access token |
 | `cache:clear` | Clear memory cache store |
-
----
-
-## Modular Extensions (Strictly Optional Multi-Platform Matrix)
-
-While Terminus defaults strictly to a pure Fullstack Web application, it provides scaffoldable native adapters connecting directly to your Rust domain engine:
-
-- **Desktop Station Daemon (`--targets=desktop`)**: Native Rust workstation daemon (`desktop/station.rs`) with sub-millisecond cold boot and direct IPC socket communication.
-- **Native Android SDK (`make:sdk --lang=kotlin`)**: Native Kotlin data classes, Coroutines (`suspend fun`), and `Dispatchers.IO` network client.
-- **Native iOS SDK (`make:sdk --lang=swift`)**: Native Swift 5.9+ data structs and `async`/`await` URLSession client.
-- **IoT Hardware Gateway (`--targets=iot`)**: HMAC-SHA256 authenticated barcode scanner & sensor telemetry scripts.
-
-These are modular client bindings generated only on demand, keeping your web backend lean and uncluttered.
-
----
-
-## Headless Testing & Assertions
-
-Writing HTTP integration tests for web APIs often requires spinning up TCP listeners, managing OS ports, or writing verbose `tower::ServiceExt::oneshot` boilerplate.
-
-Terminus provides an in-memory, headless `TestClient` with fluent assertions:
-
-```rust
-use terminus::prelude::*;
-
-#[tokio::test]
-async fn test_items_api() {
-    let app = App::new()
-        .get("/api/health", || async {
-            json_response(serde_json::json!({ "status": "ok" }))
-        })
-        .post("/api/items", |axum::Json(payload): axum::Json<serde_json::Value>| async move {
-            let mut jv = JsonValidator::new(&payload);
-            jv.require_str("name");
-            match jv.validate() {
-                Ok(_) => (
-                    axum::http::StatusCode::CREATED,
-                    [("Content-Type", "application/json")],
-                    payload.to_string(),
-                )
-                    .into_response(),
-                Err(e) => e.into_response(),
-            }
-        });
-
-    let client = TestClient::new(app);
-
-    // 1. GET assertion
-    let res = client.get("/api/health").await;
-    res.assert_ok().assert_contains("ok");
-
-    // 2. Validation failure assertion (HTTP 422)
-    let invalid = client.post("/api/items", serde_json::json!({})).await;
-    invalid.assert_unprocessable();
-
-    // 3. Successful POST assertion (HTTP 201)
-    let valid = client.post("/api/items", serde_json::json!({ "name": "Laptop" })).await;
-    valid.assert_created();
-}
-```
-
----
-
-## Empirical Performance: Terminus vs. Plain Axum
-
-Run the benchmark suite locally:
-
-```bash
-cargo run --example benchmark --release
-```
-
-Measured in-memory across 50,000 iterations per scenario on Apple Silicon (zero socket jitter):
-
-| Scenario | Throughput | p50 Latency | p95 Latency | p99 Latency | Framework Overhead |
-|---|---|---|---|---|---|
-| **Plain Axum 0.7 (GET)** | 951,123 req/s | 0.75 µs | 0.88 µs | 0.96 µs | Baseline |
-| **Terminus App (Core Router)** | **1,025,256 req/s** | **0.75 µs** | **0.88 µs** | **0.92 µs** | **0.00 µs (0%)** |
-| **Terminus App (+ CORS Layer)** | 497,362 req/s | 1.79 µs | 1.92 µs | 2.00 µs | +1.04 µs (CORS headers) |
-| **Plain Axum (POST JSON)** | 631,719 req/s | 1.29 µs | 1.42 µs | 1.50 µs | Baseline |
-| **Terminus App (POST JSON)** | 382,570 req/s | 2.29 µs | 2.46 µs | 2.58 µs | +1.00 µs (CORS headers) |
-| **Terminus Fluent Validator** | **13,159,554 ops/s** | **42 ns** | **42 ns** | **42 ns** | Zero string parsing |
-| **SQLite In-Memory Query** | 457,049 ops/s | 2.08 µs | 2.21 µs | 2.88 µs | Direct C-binding |
-
-Key takeaway: Terminus is built directly on Axum. When using Terminus Core, your HTTP routing latency is identical to plain Axum (0.75 µs p50). You get batteries-included features (Admin panel, machine introspection, request validation, RBAC) with zero performance penalty.
 
 ---
 
@@ -676,7 +482,7 @@ Terminus maintains a comprehensive test suite across feature tests, audit loggin
 cargo test
 ```
 
-All 68 unit and integration tests run in under 1 second with zero external service dependencies.
+All 70 unit and integration tests run in under 1 second with zero external service dependencies.
 
 ---
 

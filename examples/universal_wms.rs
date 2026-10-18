@@ -143,7 +143,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
     ]));
 
-    // 2. Platform Adapter 1: Mobile Client Push & SDK Generator
+    // 2. Client SDK & OpenAPI Specification
     let push_dispatcher = PushDispatcher::new();
     let sdk_gen = SdkGenerator::new("Terminus Logistics", "2.1.0")
         .type_schema("WmsItem", vec![
@@ -155,39 +155,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .endpoint("GET", "/api/inventory", None, "WmsItem[]", "Fetch real-time warehouse catalog")
         .endpoint("POST", "/api/orders/pack", Some("{ orderId: string, sku: string }"), "{ status: string }", "Mark order item packed");
 
-    println!("  [Mobile Adapter] Generated TypeScript SDK ({} bytes)", sdk_gen.to_typescript().len());
+    println!("  [Client Generator] Generated TypeScript SDK ({} bytes)", sdk_gen.to_typescript().len());
+    let openapi_json = sdk_gen.to_openapi_json();
+    println!("  [OpenAPI 3.0] Exported OpenAPI specification ({} endpoints)", openapi_json["paths"].as_object().map(|p| p.len()).unwrap_or(0));
 
-    // 3. Platform Adapter 2: Desktop Workstation Offline Sync Queue
-    let desktop_sync_queue = OfflineSyncQueue::new();
-    let offline_tx_id = desktop_sync_queue.enqueue(
-        "reserve_stock",
-        "/api/warehouse/reserve",
-        serde_json::json!({ "sku": "KB-9002-RGB", "qty": 1, "station": "Packing_Desk_04" }),
-        "tx_idempotent_98102",
-    );
-    println!("  [Desktop Adapter] Workstation offline transaction queued: {}", offline_tx_id);
-    assert_eq!(desktop_sync_queue.pending_count(), 1);
-    desktop_sync_queue.mark_synced(&offline_tx_id);
-    println!("  [Desktop Adapter] Workstation connectivity restored; synced transaction: {}", offline_tx_id);
-
-    // 4. Platform Adapter 3: IoT Barcode Scanner Hardware Integration
-    let device_registry = DeviceRegistry::new();
-    device_registry.register("scanner_gun_08", "Handheld Zebra DS3678", "device_psk_secret", "barcode_scanner");
-
-    let scan_event = BarcodeScanEvent::new("scanner_gun_08", "079357318921", "UPC-A")
-        .location("Dock-3-Receiving");
-
-    println!("  [IoT Adapter] Barcode Gun scanned: {} (symbology: {})", scan_event.barcode, scan_event.symbology);
-    let is_valid_device = device_registry.verify_signature("scanner_gun_08", &scan_event.barcode, "device_psk_secret");
-    assert!(is_valid_device);
-    device_registry.heartbeat("scanner_gun_08");
-
-    // Trigger mobile push notification upon item pack
+    // Trigger push notification upon item pack
     let notification = PushNotification::new("Order Update", "SKU KB-9002-RGB packed and verified at Dock 3", "fcm_token_alice")
         .with_data("sku", "KB-9002-RGB");
     push_dispatcher.enqueue(notification);
     let delivered = push_dispatcher.deliver_all();
-    println!("  [Push Dispatcher] Delivered push alerts to mobile devices: {:?}", delivered);
+    println!("  [Push Dispatcher] Delivered push alerts: {:?}", delivered);
 
     // 5. Document Engine: Instant PDF Invoice & Excel Report
     let pdf = PdfDocument::new("DISPATCH BILL OF LADING #8910")

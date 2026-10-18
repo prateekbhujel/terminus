@@ -1,4 +1,4 @@
-//! In-process task scheduling engine for Terminus (inspired by Laravel's Task Scheduler).
+//! In-process task scheduling engine for Terminus.
 //!
 //! Enables defining and executing recurring background tasks fluently in Rust
 //! without configuring OS-level crontab services.

@@ -81,9 +81,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     App::new()
         .name("Terminus Quickstart")
         .port(3000)
-        .get("/", || async {
-            html_response("<h1>Welcome to Terminus!</h1><p><a href='/admin'>Go to Admin Panel &rarr;</a></p>")
-        })
         .panel(admin)
         .run()
         .await

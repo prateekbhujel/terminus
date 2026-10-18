@@ -274,12 +274,10 @@ impl Default for ServiceSpec {
         Self {
             background_workers: true,
             websocket_broadcasting: true,
-            cache_stores: vec!["memory".to_string(), "redis".to_string()],
+            cache_stores: vec!["memory".to_string()],
             client_sdk_languages: vec![
                 "typescript".to_string(),
-                "swift".to_string(),
-                "kotlin".to_string(),
-                "python".to_string(),
+                "openapi".to_string(),
             ],
         }
     }

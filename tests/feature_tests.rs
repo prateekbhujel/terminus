@@ -1561,10 +1561,9 @@ fn test_passkeys_oauth_and_webhooks() {
 }
 
 #[test]
-fn test_multi_platform_mobile_iot_desktop() {
+fn test_push_notifications_and_dispatch() {
     use terminus::prelude::*;
 
-    // 1. Mobile Push Notification
     let push = PushNotification::new("New Order Alert", "Order #4092 received", "fcm_device_token_xyz")
         .with_data("order_id", "4092");
 
@@ -1572,20 +1571,6 @@ fn test_multi_platform_mobile_iot_desktop() {
     assert_eq!(fcm["message"]["token"], "fcm_device_token_xyz");
     assert_eq!(fcm["message"]["notification"]["title"], "New Order Alert");
     assert_eq!(fcm["message"]["data"]["order_id"], "4092");
-
-    // 2. IoT Telemetry Packet
-    let telemetry = DeviceTelemetry::new("sensor_hub_01")
-        .metric("temperature", 24.5)
-        .metric("humidity", 58.2)
-        .battery(94.0);
-
-    assert_eq!(telemetry.device_id, "sensor_hub_01");
-    assert_eq!(telemetry.metrics.get("temperature"), Some(&24.5));
-    assert_eq!(telemetry.battery_percent, Some(94.0));
-
-    // 3. Desktop IPC Message
-    let desktop_msg = DesktopMessage::new("window_focus", serde_json::json!({"focused": true}));
-    assert_eq!(desktop_msg.command, "window_focus");
 }
 
 #[test]
@@ -1642,7 +1627,7 @@ fn test_platform_adapters_and_sdk_generator() {
     assert_eq!(delivered.len(), 1);
     assert_eq!(dispatcher.pending_count(), 0);
 
-    // 3. Typed SDK Generator (TypeScript, Swift & Kotlin)
+    // 3. Typed SDK Generator (TypeScript & OpenAPI 3.0)
     let gen = SdkGenerator::new("Acme Logistics", "1.0")
         .type_schema("Item", vec![("id", "string"), ("stock", "number")])
         .endpoint("GET", "/items", None, "Item[]", "Fetch items")
@@ -1652,42 +1637,10 @@ fn test_platform_adapters_and_sdk_generator() {
     assert!(ts.contains("export interface Item"));
     assert!(ts.contains("export class AcmeLogisticsClient"));
     assert!(ts.contains("public async get_items(): Promise<Item[]>"));
-    let kt = gen.to_kotlin();
-    assert!(kt.contains("class AcmeLogisticsClient"));
-    assert!(kt.contains("suspend fun"));
 
-    // 4. Desktop Offline Sync Queue
-    let sync_queue = OfflineSyncQueue::new();
-    let tx1 = sync_queue.enqueue(
-        "update_inventory",
-        "/api/inventory/update",
-        serde_json::json!({"sku": "SKU_1", "qty": 5}),
-        "idemp_key_1",
-    );
-    assert_eq!(sync_queue.pending_count(), 1);
-    let pending = sync_queue.pending_records();
-    assert_eq!(pending[0].id, tx1);
-    assert_eq!(pending[0].action, "update_inventory");
-
-    assert!(sync_queue.mark_synced(&tx1));
-    assert_eq!(sync_queue.pending_count(), 0);
-
-    // 5. IoT Device Registry & Hardware Scanner
-    let registry = DeviceRegistry::new();
-    registry.register("dev_scanner_1", "Warehouse Handheld 1", "psk_secret_key_123", "scanner");
-    assert!(registry.is_registered("dev_scanner_1"));
-    assert!(!registry.is_registered("unknown_dev"));
-
-    assert!(registry.verify_signature("dev_scanner_1", "payload_data", "psk_secret_key_123"));
-    assert!(!registry.verify_signature("dev_scanner_1", "payload_data", "wrong_secret"));
-    assert!(registry.heartbeat("dev_scanner_1"));
-
-    let scan = BarcodeScanEvent::new("dev_scanner_1", "079357318921", "UPC-A")
-        .location("Aisle-4-Shelf-2");
-    assert_eq!(scan.device_id, "dev_scanner_1");
-    assert_eq!(scan.barcode, "079357318921");
-    assert_eq!(scan.symbology, "UPC-A");
-    assert_eq!(scan.location, Some("Aisle-4-Shelf-2".to_string()));
+    let openapi = gen.to_openapi_json();
+    assert_eq!(openapi["openapi"], "3.0.3");
+    assert_eq!(openapi["info"]["title"], "Acme Logistics");
 }
 
 #[tokio::test]
@@ -1745,7 +1698,7 @@ async fn test_app_fluent_group_static_and_openapi() {
 }
 
 #[test]
-fn test_swift_sdk_and_openapi_generation() {
+fn test_typescript_sdk_and_openapi_generation() {
     use terminus::prelude::*;
 
     let gen = SdkGenerator::new("Terminus Store", "2.0.0")
@@ -1758,15 +1711,13 @@ fn test_swift_sdk_and_openapi_generation() {
         .endpoint("GET", "/api/products", None, "Product[]", "Fetch product catalog")
         .endpoint("POST", "/api/checkout", Some("Product"), "Product", "Place order");
 
-    // 1. Swift SDK Verification
-    let swift = gen.to_swift();
-    assert!(swift.contains("public struct Product : Codable, Sendable"));
-    assert!(swift.contains("public var title: String"));
-    assert!(swift.contains("public var price: Double"));
-    assert!(swift.contains("public var inStock: Bool"));
-    assert!(swift.contains("public class TerminusStoreClient : @unchecked Sendable"));
-    assert!(swift.contains("URLSession.shared.data(for: req)"));
-    assert!(swift.contains("public func get_api_products() async throws -> Product[]"));
+    // 1. TypeScript SDK Verification
+    let ts = gen.to_typescript();
+    assert!(ts.contains("export interface Product {"));
+    assert!(ts.contains("title: string;"));
+    assert!(ts.contains("price: number;"));
+    assert!(ts.contains("inStock: boolean;"));
+    assert!(ts.contains("export class TerminusStoreClient"));
 
     // 2. OpenAPI Specification Verification
     let openapi = gen.to_openapi_json();
@@ -1822,163 +1773,65 @@ fn test_enhanced_testing_assertions() {
 }
 
 #[test]
-fn test_project_scaffolding_presets_and_frontends() {
+fn test_project_scaffolding_presets() {
     use terminus::prelude::*;
 
     let temp_base = std::env::temp_dir().join(format!("terminus_scaffold_test_{}", std::process::id()));
 
-    // 1. Universal preset with React frontend
-    let app1_dir = temp_base.join("app1_universal_react");
-    let config1 = ProjectConfig::new("app1_universal_react")
-        .preset(ProjectPreset::Universal)
-        .frontend(FrontendChoice::React)
-        .database(DatabaseChoice::Sqlite);
+    // 1. Fullstack preset
+    let app1_dir = temp_base.join("app1_fullstack");
+    let config1 = ProjectConfig::new("app1_fullstack")
+        .preset(ProjectPreset::Fullstack)
+        .database(DatabaseChoice::Sqlite)
+        .port(3000);
 
     let files1 = scaffold_project(&app1_dir, &config1).unwrap();
     assert!(files1.iter().any(|f| f.ends_with("Cargo.toml")));
     assert!(files1.iter().any(|f| f.ends_with("src/main.rs")));
     assert!(files1.iter().any(|f| f.ends_with(".env.example")));
     assert!(files1.iter().any(|f| f.ends_with("README.md")));
-    assert!(files1.iter().any(|f| f.ends_with("frontend/package.json")));
-    assert!(files1.iter().any(|f| f.ends_with("frontend/vite.config.ts")));
-    assert!(files1.iter().any(|f| f.ends_with("frontend/src/App.tsx")));
+    assert!(files1.iter().any(|f| f.ends_with("migrations/001_create_users_table.sql")));
+    assert!(files1.iter().any(|f| f.ends_with("public/index.html")));
 
     let cargo1 = std::fs::read_to_string(app1_dir.join("Cargo.toml")).unwrap();
-    assert!(cargo1.contains("name = \"app1_universal_react\""));
+    assert!(cargo1.contains("name = \"app1_fullstack\""));
     assert!(cargo1.contains("terminus-framework"));
 
     let main1 = std::fs::read_to_string(app1_dir.join("src/main.rs")).unwrap();
-    assert!(main1.contains("Database::open(\"app1_universal_react.db\")"));
-    assert!(main1.contains("SdkGenerator::new(\"app1_universal_react\")"));
+    assert!(main1.contains("Database::open(\"app1_fullstack.db\")"));
+    assert!(main1.contains("Terminus Fullstack Application"));
 
-    // 2. Fullstack preset with Vue frontend
-    let app2_dir = temp_base.join("app2_fullstack_vue");
-    let config2 = ProjectConfig::new("app2_fullstack_vue")
-        .preset(ProjectPreset::Fullstack)
-        .frontend(FrontendChoice::Vue)
-        .database(DatabaseChoice::Postgres);
+    let env1 = std::fs::read_to_string(app1_dir.join(".env.example")).unwrap();
+    assert!(env1.contains("DATABASE_URL=sqlite://app1_fullstack.db"));
+
+    let mig1 = std::fs::read_to_string(app1_dir.join("migrations/001_create_users_table.sql")).unwrap();
+    assert!(mig1.contains("CREATE TABLE IF NOT EXISTS users"));
+
+    // 2. Headless Backend API preset
+    let app2_dir = temp_base.join("app2_backend");
+    let config2 = ProjectConfig::new("app2_backend")
+        .preset(ProjectPreset::Backend)
+        .database(DatabaseChoice::Sqlite)
+        .port(8000);
 
     let files2 = scaffold_project(&app2_dir, &config2).unwrap();
-    assert!(files2.iter().any(|f| f.ends_with("frontend/src/App.vue")));
-    assert!(files2.iter().any(|f| f.ends_with("frontend/package.json")));
+    assert!(files2.iter().any(|f| f.ends_with("Cargo.toml")));
+    assert!(files2.iter().any(|f| f.ends_with("src/main.rs")));
+    assert!(files2.iter().any(|f| f.ends_with(".env.example")));
+    assert!(files2.iter().any(|f| f.ends_with("migrations/001_create_users_table.sql")));
 
-    let env2 = std::fs::read_to_string(app2_dir.join(".env.example")).unwrap();
-    assert!(env2.contains("postgres://"));
+    let main2 = std::fs::read_to_string(app2_dir.join("src/main.rs")).unwrap();
+    assert!(main2.contains("Terminus Headless API"));
+    assert!(main2.contains("SdkGenerator::new(\"app2_backend\""));
+    assert!(main2.contains("openapi(\"/api/openapi.json\""));
 
-    // 3. Headless Backend API preset (no frontend)
-    let app3_dir = temp_base.join("app3_backend_api");
-    let config3 = ProjectConfig::new("app3_backend_api")
-        .preset(ProjectPreset::Backend)
-        .frontend(FrontendChoice::None)
-        .database(DatabaseChoice::Sqlite);
+    // 3. Targets and Presets
+    assert_eq!(parse_targets("web"), vec![TargetPlatform::Web]);
+    assert_eq!(parse_targets("any"), vec![TargetPlatform::Web]);
+    assert_eq!(ProjectPreset::from_str_loose("fullstack"), Some(ProjectPreset::Fullstack));
+    assert_eq!(ProjectPreset::from_str_loose("backend"), Some(ProjectPreset::Backend));
 
-    let files3 = scaffold_project(&app3_dir, &config3).unwrap();
-    assert!(!files3.iter().any(|f| f.to_string_lossy().contains("frontend")));
-    let main3 = std::fs::read_to_string(app3_dir.join("src/main.rs")).unwrap();
-    assert!(main3.contains("Terminus Headless API"));
-
-    // 4. Fullstack preset with HTMX frontend
-    let app4_dir = temp_base.join("app4_htmx");
-    let config4 = ProjectConfig::new("app4_htmx")
-        .preset(ProjectPreset::Fullstack)
-        .frontend(FrontendChoice::Htmx)
-        .database(DatabaseChoice::Sqlite);
-
-    let files4 = scaffold_project(&app4_dir, &config4).unwrap();
-    assert!(files4.iter().any(|f| f.ends_with("public/index.html")));
-    let htmx_html = std::fs::read_to_string(app4_dir.join("public/index.html")).unwrap();
-    assert!(htmx_html.contains("htmx.org"));
-    assert!(htmx_html.contains("app4_htmx"));
-
-    // Clean up temporary files
-    let _ = std::fs::remove_dir_all(&temp_base);
-}
-
-#[test]
-fn test_composable_platform_matrix_scaffolding() {
-    use terminus::prelude::*;
-
-    // 1. Target platform string parsing
-    assert_eq!(parse_targets("desktop"), vec![TargetPlatform::Desktop]);
-    assert_eq!(parse_targets("iot"), vec![TargetPlatform::IoT]);
-    assert_eq!(parse_targets("web,desktop"), vec![TargetPlatform::Web, TargetPlatform::Desktop]);
-    assert_eq!(
-        parse_targets("web,desktop,mobile"),
-        vec![TargetPlatform::Web, TargetPlatform::Desktop, TargetPlatform::Mobile]
-    );
-    assert_eq!(
-        parse_targets("all"),
-        vec![
-            TargetPlatform::Web,
-            TargetPlatform::Desktop,
-            TargetPlatform::Mobile,
-            TargetPlatform::IoT,
-        ]
-    );
-
-    let temp_base = std::env::temp_dir().join(format!("terminus_matrix_test_{}", std::process::id()));
-
-    // 2. Desktop-only scaffolding
-    let desk_dir = temp_base.join("desk_app");
-    let desk_config = ProjectConfig::new("desk_app")
-        .targets(vec![TargetPlatform::Desktop]);
-    assert!(desk_config.is_desktop_only());
-    assert!(!desk_config.has_target(TargetPlatform::Web));
-    assert!(!desk_config.has_target(TargetPlatform::IoT));
-
-    let desk_files = scaffold_project(&desk_dir, &desk_config).unwrap();
-    assert!(desk_files.iter().any(|f| f.ends_with("desktop/desktop_bridge.ts")));
-    assert!(desk_files.iter().any(|f| f.ends_with("desktop/README.md")));
-    assert!(!desk_files.iter().any(|f| f.to_string_lossy().contains("frontend")));
-    assert!(!desk_files.iter().any(|f| f.to_string_lossy().contains("iot")));
-    assert!(!desk_files.iter().any(|f| f.to_string_lossy().contains("mobile")));
-
-    let desk_main = std::fs::read_to_string(desk_dir.join("src/main.rs")).unwrap();
-    assert!(desk_main.contains("Terminus Desktop Workstation Engine"));
-    assert!(desk_main.contains("/api/desktop/sync"));
-
-    // 3. IoT-only scaffolding
-    let iot_dir = temp_base.join("iot_app");
-    let iot_config = ProjectConfig::new("iot_app")
-        .targets(vec![TargetPlatform::IoT]);
-    assert!(iot_config.is_iot_only());
-    assert!(!iot_config.has_target(TargetPlatform::Web));
-    assert!(!iot_config.has_target(TargetPlatform::Desktop));
-
-    let iot_files = scaffold_project(&iot_dir, &iot_config).unwrap();
-    assert!(iot_files.iter().any(|f| f.ends_with("iot/iot_client.py")));
-    assert!(iot_files.iter().any(|f| f.ends_with("iot/README.md")));
-    assert!(!iot_files.iter().any(|f| f.to_string_lossy().contains("frontend")));
-    assert!(!iot_files.iter().any(|f| f.to_string_lossy().contains("desktop")));
-
-    let iot_main = std::fs::read_to_string(iot_dir.join("src/main.rs")).unwrap();
-    assert!(iot_main.contains("Terminus IoT Hardware Scanner Gateway"));
-    assert!(iot_main.contains("/api/iot/telemetry"));
-
-    // 4. Web + Desktop hybrid with React
-    let hybrid_dir = temp_base.join("hybrid_app");
-    let hybrid_config = ProjectConfig::new("hybrid_app")
-        .targets(vec![TargetPlatform::Web, TargetPlatform::Desktop])
-        .frontend(FrontendChoice::React);
-
-    let hybrid_files = scaffold_project(&hybrid_dir, &hybrid_config).unwrap();
-    assert!(hybrid_files.iter().any(|f| f.ends_with("frontend/src/App.tsx")));
-    assert!(hybrid_files.iter().any(|f| f.ends_with("desktop/desktop_bridge.ts")));
-    assert!(!hybrid_files.iter().any(|f| f.to_string_lossy().contains("iot")));
-    assert!(!hybrid_files.iter().any(|f| f.to_string_lossy().contains("mobile")));
-
-    // 5. Web + Desktop + Mobile
-    let omni_dir = temp_base.join("omni_app");
-    let omni_config = ProjectConfig::new("omni_app")
-        .targets(vec![TargetPlatform::Web, TargetPlatform::Desktop, TargetPlatform::Mobile]);
-
-    let omni_files = scaffold_project(&omni_dir, &omni_config).unwrap();
-    assert!(omni_files.iter().any(|f| f.ends_with("desktop/desktop_bridge.ts")));
-    assert!(omni_files.iter().any(|f| f.ends_with("mobile/TerminusClient.swift")));
-    assert!(omni_files.iter().any(|f| f.ends_with("mobile/TerminusClient.kt")));
-    assert!(!omni_files.iter().any(|f| f.to_string_lossy().contains("iot")));
-
-    // Clean up
+    // Clean up temporary directory
     let _ = std::fs::remove_dir_all(&temp_base);
 }
 
@@ -2281,7 +2134,7 @@ impl Validate for NewsletterSubscriber {
 }
 
 #[tokio::test]
-async fn test_taylor_style_valid_extractor_and_redirect_controller() {
+async fn test_valid_extractor_and_redirect_controller() {
     // 1. Setup in-memory SQLite schema
     let db = Database::memory().unwrap();
     db.with_conn(|conn| {
@@ -2292,7 +2145,7 @@ async fn test_taylor_style_valid_extractor_and_redirect_controller() {
     });
     Database::set_global(db);
 
-    // 2. Define controller handler function matching Taylor Otwell tweet ergonomics
+    // 2. Define controller handler function with fluent validation ergonomics
     async fn subscribe_handler(Valid(subscriber): Valid<NewsletterSubscriber>) -> Result<Redirect> {
         db::query!("INSERT INTO subscribers (email) VALUES (?)", subscriber.email)
             .insert()
@@ -2311,7 +2164,7 @@ async fn test_taylor_style_valid_extractor_and_redirect_controller() {
     // 3. Test valid subscriber submission -> HTTP 303 See Other Redirect to /subscribe/thank-you
     let res = client
         .post("/subscribe", serde_json::json!({
-            "email": "taylor@laravel.com",
+            "email": "subscriber@example.com",
             "channel": "rust-preview"
         }))
         .await;
@@ -2323,12 +2176,12 @@ async fn test_taylor_style_valid_extractor_and_redirect_controller() {
     );
 
     // Verify row was inserted into database via db::query!
-    let row = db::query!("SELECT email FROM subscribers WHERE email = ?", "taylor@laravel.com")
+    let row = db::query!("SELECT email FROM subscribers WHERE email = ?", "subscriber@example.com")
         .fetch_one()
         .await
         .unwrap();
     assert!(row.is_some());
-    assert_eq!(row.unwrap().get("email").unwrap(), "taylor@laravel.com");
+    assert_eq!(row.unwrap().get("email").unwrap(), "subscriber@example.com");
 
     // 4. Test invalid subscriber submission -> HTTP 422 Unprocessable Entity
     let bad_res = client
@@ -2346,18 +2199,10 @@ async fn test_taylor_style_valid_extractor_and_redirect_controller() {
 
 #[tokio::test]
 async fn test_db_query_macro_and_dialect_compilation() {
-    // 1. Dialect parameter conversion for PostgreSQL ($1, $2, ...) vs SQLite (?)
-    let pg_query = SqlQuery::new("SELECT * FROM subscribers WHERE email = ? AND status = ?")
-        .engine(DatabaseEngine::Postgres);
+    // 1. Parameterized SQLite query compilation
+    let query = SqlQuery::new("SELECT * FROM subscribers WHERE email = ? AND status = ?");
     assert_eq!(
-        pg_query.compiled_sql(),
-        "SELECT * FROM subscribers WHERE email = $1 AND status = $2"
-    );
-
-    let sqlite_query = SqlQuery::new("SELECT * FROM subscribers WHERE email = ? AND status = ?")
-        .engine(DatabaseEngine::Sqlite);
-    assert_eq!(
-        sqlite_query.compiled_sql(),
+        query.compiled_sql(),
         "SELECT * FROM subscribers WHERE email = ? AND status = ?"
     );
 
@@ -2398,93 +2243,86 @@ async fn test_db_query_macro_and_dialect_compilation() {
 }
 
 #[test]
-fn test_multi_database_engines_and_url_parsing() {
-    // 1. PostgreSQL
-    let pg = DatabaseConfig::from_url("postgres://postgres:secret@localhost:5432/ecommerce_prod").unwrap();
-    assert_eq!(pg.engine, DatabaseEngine::Postgres);
-    assert_eq!(pg.host, "localhost");
-    assert_eq!(pg.port, 5432);
-    assert_eq!(pg.database, "ecommerce_prod");
-    assert_eq!(pg.username.as_deref(), Some("postgres"));
-    assert_eq!(pg.password.as_deref(), Some("secret"));
-    assert_eq!(pg.to_url(), "postgres://postgres:secret@localhost:5432/ecommerce_prod");
+fn test_sqlite_embedded_database_engine_and_persistence() {
+    use terminus::prelude::*;
 
-    // 2. MySQL / MariaDB
-    let mysql = DatabaseConfig::from_url("mysql://root:rootpass@127.0.0.1:3306/terminus_app").unwrap();
-    assert_eq!(mysql.engine, DatabaseEngine::Mysql);
-    assert_eq!(mysql.port, 3306);
-    assert_eq!(mysql.database, "terminus_app");
+    // 1. In-memory SQLite connection
+    let db = Database::memory().unwrap();
+    db.execute(
+        "CREATE TABLE test_users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE,
+            email TEXT NOT NULL
+        )",
+    ).unwrap();
 
-    // 3. MongoDB NoSQL
-    let mongo = DatabaseConfig::from_url("mongodb://cluster0.example.com:27017/analytics").unwrap();
-    assert_eq!(mongo.engine, DatabaseEngine::Mongo);
-    assert_eq!(mongo.host, "cluster0.example.com");
-    assert_eq!(mongo.port, 27017);
-    assert_eq!(mongo.database, "analytics");
+    // 2. Parameterized insertion
+    let affected = db.with_conn(|conn| {
+        conn.execute(
+            "INSERT INTO test_users (username, email) VALUES (?1, ?2)",
+            rusqlite::params!["pratik", "pratik@example.com"],
+        )
+    }).unwrap();
+    assert_eq!(affected, 1);
 
-    // 4. Redis Key-Value Store
-    let redis = DatabaseConfig::from_url("redis://default:token@cache.internal:6379/0").unwrap();
-    assert_eq!(redis.engine, DatabaseEngine::Redis);
-    assert_eq!(redis.host, "cache.internal");
-    assert_eq!(redis.port, 6379);
-
-    // 5. SQLite file & in-memory
-    let sqlite_file = DatabaseConfig::from_url("sqlite://app.db").unwrap();
-    assert_eq!(sqlite_file.engine, DatabaseEngine::Sqlite);
-    assert_eq!(sqlite_file.database, "app.db");
-
-    let sqlite_mem = DatabaseConfig::from_url(":memory:").unwrap();
-    assert_eq!(sqlite_mem.engine, DatabaseEngine::Sqlite);
-    assert_eq!(sqlite_mem.database, ":memory:");
-}
-
-#[test]
-fn test_mongo_collection_in_memory_crud() {
-    let db = Database::connect("mongodb://localhost:27017/events").unwrap();
-    let col = db.collection("telemetry");
-
-    assert_eq!(col.count_documents(), 0);
-
-    let doc = serde_json::json!({
-        "event": "user_login",
-        "ip": "127.0.0.1",
-        "status": "success"
+    // 3. Query execution
+    db.with_conn(|conn| {
+        let mut stmt = conn.prepare("SELECT username, email FROM test_users WHERE username = ?1").unwrap();
+        let mut rows = stmt.query(rusqlite::params!["pratik"]).unwrap();
+        let row = rows.next().unwrap().unwrap();
+        let user: String = row.get(0).unwrap();
+        let mail: String = row.get(1).unwrap();
+        assert_eq!(user, "pratik");
+        assert_eq!(mail, "pratik@example.com");
     });
 
-    let id = col.insert_one(doc).unwrap();
-    assert!(!id.is_empty());
-    assert_eq!(col.count_documents(), 1);
+    // 4. URL parsing for SQLite
+    let cfg1 = DatabaseConfig::from_url("sqlite://custom.db").unwrap();
+    assert_eq!(cfg1.database, "custom.db");
 
-    let found = col.find_one("event", "user_login").unwrap();
-    assert_eq!(found.get("status").unwrap(), "success");
-
-    let all = col.find_all();
-    assert_eq!(all.len(), 1);
-
-    let deleted = col.delete_one("event", "user_login");
-    assert!(deleted);
-    assert_eq!(col.count_documents(), 0);
+    let cfg2 = DatabaseConfig::from_url(":memory:").unwrap();
+    assert_eq!(cfg2.database, ":memory:");
 }
 
 #[test]
-fn test_redis_store_in_memory_key_value() {
-    let db = Database::connect("redis://localhost:6379").unwrap();
-    let redis = db.redis();
+fn test_rfc2104_hmac_sha256_signed_session_cookies() {
+    use terminus::prelude::*;
 
-    // 1. Simple Set & Get
-    redis.set("session:token_abc", "user_42", None);
-    assert_eq!(redis.get("session:token_abc").as_deref(), Some("user_42"));
-    assert!(redis.exists("session:token_abc"));
+    let secret = b"super_secure_production_secret_key_32_bytes";
+    let session = Session::new();
+    session.set("account_id", "acc_8892");
+    session.set("role", "admin");
 
-    // 2. Keys prefix listing
-    redis.set("session:token_xyz", "user_99", None);
-    let keys = redis.keys("session:");
-    assert_eq!(keys.len(), 2);
+    // 1. Generate signed cookie header
+    let cookie_header = session.signed_cookie_header(secret);
+    assert!(cookie_header.starts_with("terminus_session="));
+    assert!(cookie_header.contains("HttpOnly"));
+    assert!(cookie_header.contains("SameSite=Lax"));
 
-    // 3. Delete
-    assert!(redis.del("session:token_abc"));
-    assert!(!redis.exists("session:token_abc"));
-    assert_eq!(redis.get("session:token_abc"), None);
+    // Extract cookie value
+    let val = cookie_header
+        .split(';')
+        .next()
+        .unwrap()
+        .trim_start_matches("terminus_session=");
+
+    // 2. Successful verification with correct secret
+    let verified_id = Session::verify_signed_cookie(val, secret);
+    assert_eq!(verified_id, Some(session.id().to_string()));
+
+    // 3. Rejection with wrong secret
+    let wrong_secret = b"wrong_secret_key_that_should_fail_verification";
+    assert_eq!(Session::verify_signed_cookie(val, wrong_secret), None);
+
+    // 4. Rejection with tampered session payload
+    let tampered_cookie = format!("tampered_{}", val);
+    assert_eq!(Session::verify_signed_cookie(&tampered_cookie, secret), None);
+
+    // 5. Rejection with tampered signature
+    if let Some((sid, _sig)) = val.split_once('.') {
+        let tampered_sig = format!("{}.0000000000000000000000000000000000000000000000000000000000000000", sid);
+        assert_eq!(Session::verify_signed_cookie(&tampered_sig, secret), None);
+    }
 }
 
 #[test]
@@ -2500,53 +2338,6 @@ fn test_configurable_port_presets_and_app_spec() {
 
     let custom_app = App::new().port(9090);
     assert_eq!(custom_app.spec().port, 9090);
-}
-
-#[test]
-fn test_native_android_kotlin_sdk_generation() {
-    let sdk_gen = SdkGenerator::new("Omni Logistics", "2.1.0")
-        .type_schema("Package", vec![
-            ("id", "string"),
-            ("trackingCode", "string"),
-            ("weightKg", "f64"),
-            ("delivered", "bool"),
-        ])
-        .endpoint("GET", "/api/v1/packages", None, "List<Package>", "List tracked packages")
-        .endpoint("POST", "/api/v1/packages", Some("Package"), "Package", "Register new package");
-
-    let kotlin_code = sdk_gen.to_kotlin();
-    assert!(kotlin_code.contains("package dev.terminus.client"));
-    assert!(kotlin_code.contains("data class Package ("));
-    assert!(kotlin_code.contains("val trackingCode: String"));
-    assert!(kotlin_code.contains("val weightKg: Double"));
-    assert!(kotlin_code.contains("val delivered: Boolean"));
-    assert!(kotlin_code.contains("class OmniLogisticsClient("));
-    assert!(kotlin_code.contains("http://10.0.2.2:3000"));
-    assert!(kotlin_code.contains("suspend fun get_api_v1_packages"));
-    assert!(kotlin_code.contains("suspend fun post_api_v1_packages"));
-    assert!(kotlin_code.contains("Dispatchers.IO"));
-}
-
-#[test]
-fn test_native_desktop_bridge_and_station_ipc() {
-    let bridge = NativeDesktopBridge::new();
-
-    // 1. Dispatch ping command to native desktop station
-    let pong = bridge.dispatch(DesktopMessage::new("ping", serde_json::json!({}))).unwrap();
-    assert_eq!(pong.get("status").unwrap(), "pong");
-    assert_eq!(pong.get("runtime").unwrap(), "native-desktop");
-
-    // 2. Queue offline mutation and inspect via station bridge
-    let id = bridge.queue().enqueue(
-        "create",
-        "/api/orders",
-        serde_json::json!({ "total": 250.00 }),
-        "tx_kiosk_99",
-    );
-    assert!(!id.is_empty());
-
-    let sync_res = bridge.dispatch(DesktopMessage::new("sync_pending", serde_json::json!({}))).unwrap();
-    assert_eq!(sync_res.get("count").unwrap(), 1);
 }
 
 #[test]

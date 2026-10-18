@@ -206,11 +206,58 @@ impl Session {
         format!("terminus_session={}; Path=/; HttpOnly; SameSite=Lax", self.id)
     }
 
+    /// Formats a cryptographically signed Set-Cookie HTTP header value for this session.
+    pub fn signed_cookie_header(&self, secret: &[u8]) -> String {
+        let sig = hmac_sha256(secret, self.id.as_bytes());
+        let hex_sig: String = sig.iter().map(|b| format!("{:02x}", b)).collect();
+        format!("terminus_session={}.{}; Path=/; HttpOnly; SameSite=Lax", self.id, hex_sig)
+    }
+
+    /// Verifies and extracts the session ID from a signed cookie value.
+    pub fn verify_signed_cookie(cookie_val: &str, secret: &[u8]) -> Option<String> {
+        let (id, submitted_sig) = cookie_val.split_once('.')?;
+        let expected_sig = hmac_sha256(secret, id.as_bytes());
+        let expected_hex: String = expected_sig.iter().map(|b| format!("{:02x}", b)).collect();
+        if constant_time_eq(&expected_hex, submitted_sig) {
+            Some(id.to_string())
+        } else {
+            None
+        }
+    }
+
     fn touch(&self) {
         if let Ok(mut accessed) = self.last_accessed.write() {
             *accessed = Utc::now().timestamp();
         }
     }
+}
+
+/// Computes HMAC-SHA256 according to RFC 2104 using pure-Rust SHA-256
+pub fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; 32] {
+    let mut k = [0u8; 64];
+    if key.len() > 64 {
+        let hashed = crate::token::sha256(key);
+        k[..32].copy_from_slice(&hashed);
+    } else {
+        k[..key.len()].copy_from_slice(key);
+    }
+
+    let mut o_key_pad = [0x5cu8; 64];
+    let mut i_key_pad = [0x36u8; 64];
+    for i in 0..64 {
+        o_key_pad[i] ^= k[i];
+        i_key_pad[i] ^= k[i];
+    }
+
+    let mut inner = Vec::with_capacity(64 + message.len());
+    inner.extend_from_slice(&i_key_pad);
+    inner.extend_from_slice(message);
+    let inner_hash = crate::token::sha256(&inner);
+
+    let mut outer = Vec::with_capacity(64 + 32);
+    outer.extend_from_slice(&o_key_pad);
+    outer.extend_from_slice(&inner_hash);
+    crate::token::sha256(&outer)
 }
 
 /// Global session repository managing session lifecycle across threads.

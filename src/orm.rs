@@ -1,7 +1,6 @@
 //! Terminus ORM — Active Record ORM in Rust
 //! Models, Active Record pattern, query scopes, relationships (has_many, belongs_to), and schema builders.
 
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
@@ -600,40 +599,9 @@ impl Blueprint {
         self
     }
 
-    /// Compile Blueprint schema definition into SQL dialect for the designated database engine
-    pub fn to_sql(&self, engine: DatabaseEngine) -> String {
-        match engine {
-            DatabaseEngine::Postgres => {
-                let pg_cols: Vec<String> = self.columns.iter().map(|c| {
-                    if c == "id TEXT PRIMARY KEY" {
-                        "id VARCHAR(64) PRIMARY KEY".to_string()
-                    } else if c.ends_with("TEXT NOT NULL DEFAULT '{}'") {
-                        c.replace("TEXT NOT NULL DEFAULT '{}'", "JSONB NOT NULL DEFAULT '{}'")
-                    } else {
-                        c.clone()
-                    }
-                }).collect();
-                format!("CREATE TABLE IF NOT EXISTS {} ({});", self.table_name, pg_cols.join(", "))
-            }
-            DatabaseEngine::Mysql => {
-                let mysql_cols: Vec<String> = self.columns.iter().map(|c| {
-                    if c == "id TEXT PRIMARY KEY" {
-                        "`id` VARCHAR(64) PRIMARY KEY".to_string()
-                    } else {
-                        let parts: Vec<&str> = c.splitn(2, ' ').collect();
-                        if parts.len() == 2 {
-                            format!("`{}` {}", parts[0], parts[1])
-                        } else {
-                            c.clone()
-                        }
-                    }
-                }).collect();
-                format!("CREATE TABLE IF NOT EXISTS `{}` ({}) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;", self.table_name, mysql_cols.join(", "))
-            }
-            _ => {
-                format!("CREATE TABLE IF NOT EXISTS {} ({});", self.table_name, self.columns.join(", "))
-            }
-        }
+    /// Compile Blueprint schema definition into SQL dialect for SQLite
+    pub fn to_sql(&self) -> String {
+        format!("CREATE TABLE IF NOT EXISTS {} ({});", self.table_name, self.columns.join(", "))
     }
 }
 
@@ -658,10 +626,10 @@ impl Schema {
         Ok(())
     }
 
-    pub fn compile<F: FnOnce(&mut Blueprint)>(table: &str, engine: DatabaseEngine, callback: F) -> String {
+    pub fn compile<F: FnOnce(&mut Blueprint)>(table: &str, callback: F) -> String {
         let mut bp = Blueprint::new(table);
         callback(&mut bp);
-        bp.to_sql(engine)
+        bp.to_sql()
     }
 
     pub fn drop_if_exists(conn: &rusqlite::Connection, table: &str) -> Result<(), rusqlite::Error> {
@@ -670,153 +638,32 @@ impl Schema {
     }
 }
 
-/// Supported Database Engines in the Terminus ecosystem
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub enum DatabaseEngine {
-    #[default]
-    Sqlite,
-    Postgres,
-    Mysql,
-    Mongo,
-    Redis,
-}
-
-impl std::fmt::Display for DatabaseEngine {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Sqlite => write!(f, "sqlite"),
-            Self::Postgres => write!(f, "postgres"),
-            Self::Mysql => write!(f, "mysql"),
-            Self::Mongo => write!(f, "mongo"),
-            Self::Redis => write!(f, "redis"),
-        }
-    }
-}
-
-/// Universal Database Configuration Envelope
+/// SQLite Database Configuration
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DatabaseConfig {
-    pub engine: DatabaseEngine,
-    pub host: String,
-    pub port: u16,
     pub database: String,
-    pub username: Option<String>,
-    pub password: Option<String>,
-    pub options: HashMap<String, String>,
 }
 
 impl Default for DatabaseConfig {
     fn default() -> Self {
         Self {
-            engine: DatabaseEngine::Sqlite,
-            host: "127.0.0.1".to_string(),
-            port: 0,
             database: "terminus.db".to_string(),
-            username: None,
-            password: None,
-            options: HashMap::new(),
         }
     }
 }
 
 impl DatabaseConfig {
-    /// Parse standard database connection URLs (e.g. postgres://, mysql://, mongodb://, redis://, sqlite://)
+    /// Parse SQLite database connection URL or path (e.g. sqlite://app.db, :memory:, app.db)
     pub fn from_url(url: &str) -> Result<Self, String> {
         let trimmed = url.trim();
         if trimmed == ":memory:" || trimmed.starts_with("sqlite::memory:") {
             return Ok(Self {
-                engine: DatabaseEngine::Sqlite,
-                host: "memory".to_string(),
-                port: 0,
                 database: ":memory:".to_string(),
-                ..Default::default()
             });
         }
-
-        if trimmed.starts_with("sqlite://") || trimmed.ends_with(".db") || trimmed.ends_with(".sqlite") {
-            let path = trimmed.strip_prefix("sqlite://").unwrap_or(trimmed);
-            return Ok(Self {
-                engine: DatabaseEngine::Sqlite,
-                host: "localhost".to_string(),
-                port: 0,
-                database: path.to_string(),
-                ..Default::default()
-            });
-        }
-
-        let (scheme, rest) = trimmed.split_once("://").ok_or_else(|| {
-            format!("Invalid connection URL '{trimmed}': missing scheme separator '://'")
-        })?;
-
-        let engine = match scheme.to_lowercase().as_str() {
-            "postgres" | "postgresql" => DatabaseEngine::Postgres,
-            "mysql" | "mariadb" => DatabaseEngine::Mysql,
-            "mongodb" | "mongo" => DatabaseEngine::Mongo,
-            "redis" | "rediss" => DatabaseEngine::Redis,
-            "sqlite" => DatabaseEngine::Sqlite,
-            unknown => return Err(format!("Unsupported database engine scheme: {unknown}")),
-        };
-
-        let default_port = match engine {
-            DatabaseEngine::Sqlite => 0,
-            DatabaseEngine::Postgres => 5432,
-            DatabaseEngine::Mysql => 3306,
-            DatabaseEngine::Mongo => 27017,
-            DatabaseEngine::Redis => 6379,
-        };
-
-        let (auth_and_host, path_and_query) = if let Some((ah, pq)) = rest.split_once('/') {
-            (ah, Some(pq))
-        } else {
-            (rest, None)
-        };
-
-        let (auth, host_port) = if let Some((a, h)) = auth_and_host.split_once('@') {
-            (Some(a), h)
-        } else {
-            (None, auth_and_host)
-        };
-
-        let (username, password) = if let Some(a) = auth {
-            if let Some((u, p)) = a.split_once(':') {
-                (Some(u.to_string()), Some(p.to_string()))
-            } else {
-                (Some(a.to_string()), None)
-            }
-        } else {
-            (None, None)
-        };
-
-        let (host, port) = if let Some((h, p)) = host_port.split_once(':') {
-            (h.to_string(), p.parse::<u16>().unwrap_or(default_port))
-        } else {
-            (host_port.to_string(), default_port)
-        };
-
-        let (database, options) = if let Some(pq) = path_and_query {
-            if let Some((db, q)) = pq.split_once('?') {
-                let mut opts = HashMap::new();
-                for pair in q.split('&') {
-                    if let Some((k, v)) = pair.split_once('=') {
-                        opts.insert(k.to_string(), v.to_string());
-                    }
-                }
-                (db.to_string(), opts)
-            } else {
-                (pq.to_string(), HashMap::new())
-            }
-        } else {
-            (String::new(), HashMap::new())
-        };
-
+        let path = trimmed.strip_prefix("sqlite://").unwrap_or(trimmed);
         Ok(Self {
-            engine,
-            host,
-            port,
-            database,
-            username,
-            password,
-            options,
+            database: path.to_string(),
         })
     }
 
@@ -828,142 +675,19 @@ impl DatabaseConfig {
 
     /// Serialize configuration back into a standard connection URL string
     pub fn to_url(&self) -> String {
-        match self.engine {
-            DatabaseEngine::Sqlite => {
-                if self.database == ":memory:" {
-                    "sqlite::memory:".to_string()
-                } else {
-                    format!("sqlite://{}", self.database)
-                }
-            }
-            engine => {
-                let user_part = match (&self.username, &self.password) {
-                    (Some(u), Some(p)) => format!("{u}:{p}@"),
-                    (Some(u), None) => format!("{u}@"),
-                    _ => String::new(),
-                };
-                let port_part = if self.port > 0 {
-                    format!(":{}", self.port)
-                } else {
-                    String::new()
-                };
-                format!("{}://{}{}{}/{}", engine, user_part, self.host, port_part, self.database)
-            }
-        }
-    }
-}
-
-/// In-Memory NoSQL Document Collection for rapid prototyping and Mongo adapter operations
-#[derive(Clone)]
-pub struct MongoCollection {
-    pub name: String,
-    store: Arc<Mutex<HashMap<String, Vec<serde_json::Value>>>>,
-}
-
-impl MongoCollection {
-    pub fn new(name: impl Into<String>, store: Arc<Mutex<HashMap<String, Vec<serde_json::Value>>>>) -> Self {
-        Self { name: name.into(), store }
-    }
-
-    pub fn insert_one(&self, mut doc: serde_json::Value) -> Result<String, String> {
-        let mut guard = self.store.lock().unwrap();
-        let list = guard.entry(self.name.clone()).or_default();
-        let id = if let Some(id) = doc.get("_id").and_then(|v| v.as_str()) {
-            id.to_string()
+        if self.database == ":memory:" {
+            "sqlite::memory:".to_string()
         } else {
-            let gen = format!("{:x}", Utc::now().timestamp_nanos_opt().unwrap_or(0));
-            if let Some(obj) = doc.as_object_mut() {
-                obj.insert("_id".to_string(), serde_json::Value::String(gen.clone()));
-            }
-            gen
-        };
-        list.push(doc);
-        Ok(id)
-    }
-
-    pub fn find_one(&self, filter_key: &str, filter_val: &str) -> Option<serde_json::Value> {
-        let guard = self.store.lock().unwrap();
-        let list = guard.get(&self.name)?;
-        list.iter().find(|doc| {
-            doc.get(filter_key).and_then(|v| v.as_str()) == Some(filter_val)
-        }).cloned()
-    }
-
-    pub fn find_all(&self) -> Vec<serde_json::Value> {
-        let guard = self.store.lock().unwrap();
-        guard.get(&self.name).cloned().unwrap_or_default()
-    }
-
-    pub fn count_documents(&self) -> usize {
-        let guard = self.store.lock().unwrap();
-        guard.get(&self.name).map(|v| v.len()).unwrap_or(0)
-    }
-
-    pub fn delete_one(&self, filter_key: &str, filter_val: &str) -> bool {
-        let mut guard = self.store.lock().unwrap();
-        if let Some(list) = guard.get_mut(&self.name) {
-            if let Some(pos) = list.iter().position(|doc| doc.get(filter_key).and_then(|v| v.as_str()) == Some(filter_val)) {
-                list.remove(pos);
-                return true;
-            }
+            format!("sqlite://{}", self.database)
         }
-        false
     }
 }
 
-/// In-Memory / Managed Redis Store for caching, session stores, and key-value queues
-#[derive(Clone)]
-pub struct RedisStore {
-    pub url: String,
-    store: Arc<Mutex<HashMap<String, (String, Option<DateTime<Utc>>)>>>,
-}
-
-impl RedisStore {
-    pub fn new(url: impl Into<String>, store: Arc<Mutex<HashMap<String, (String, Option<DateTime<Utc>>)>>>) -> Self {
-        Self { url: url.into(), store }
-    }
-
-    pub fn get(&self, key: &str) -> Option<String> {
-        let mut guard = self.store.lock().unwrap();
-        if let Some((val, expiry)) = guard.get(key) {
-            if let Some(exp) = expiry {
-                if Utc::now() > *exp {
-                    guard.remove(key);
-                    return None;
-                }
-            }
-            return Some(val.clone());
-        }
-        None
-    }
-
-    pub fn set(&self, key: &str, val: impl Into<String>, ttl_secs: Option<u64>) {
-        let mut guard = self.store.lock().unwrap();
-        let expiry = ttl_secs.map(|s| Utc::now() + chrono::Duration::seconds(s as i64));
-        guard.insert(key.to_string(), (val.into(), expiry));
-    }
-
-    pub fn del(&self, key: &str) -> bool {
-        let mut guard = self.store.lock().unwrap();
-        guard.remove(key).is_some()
-    }
-
-    pub fn exists(&self, key: &str) -> bool {
-        self.get(key).is_some()
-    }
-
-    pub fn keys(&self, prefix: &str) -> Vec<String> {
-        let guard = self.store.lock().unwrap();
-        guard.keys().filter(|k| k.starts_with(prefix)).cloned().collect()
-    }
-}
-
-/// Ergonomic, parameterized SQL Query object with sync & async execution support
+/// Ergonomic, parameterized SQL Query object with sync & async execution support for SQLite
 #[derive(Debug, Clone, Default)]
 pub struct SqlQuery {
     pub raw_sql: String,
     pub bindings: Vec<String>,
-    pub engine: DatabaseEngine,
 }
 
 impl SqlQuery {
@@ -971,7 +695,6 @@ impl SqlQuery {
         Self {
             raw_sql: sql.into(),
             bindings: Vec::new(),
-            engine: DatabaseEngine::Sqlite,
         }
     }
 
@@ -980,42 +703,12 @@ impl SqlQuery {
         self
     }
 
-    pub fn engine(mut self, engine: DatabaseEngine) -> Self {
-        self.engine = engine;
-        self
+    pub fn sql(&self) -> &str {
+        &self.raw_sql
     }
 
-    /// Compiles parameter markers for the target database engine:
-    /// - SQLite / MySQL: `?`
-    /// - PostgreSQL: `$1, $2, ...`
-    pub fn compiled_sql(&self) -> String {
-        match self.engine {
-            DatabaseEngine::Postgres => {
-                let mut out = String::new();
-                let mut param_idx = 1;
-                let chars: Vec<char> = self.raw_sql.chars().collect();
-                let mut i = 0;
-                while i < chars.len() {
-                    if chars[i] == '?' {
-                        out.push('$');
-                        out.push_str(&param_idx.to_string());
-                        param_idx += 1;
-                        if i + 1 < chars.len() && chars[i + 1].is_ascii_digit() {
-                            i += 1;
-                            while i < chars.len() && chars[i].is_ascii_digit() {
-                                i += 1;
-                            }
-                            continue;
-                        }
-                    } else {
-                        out.push(chars[i]);
-                    }
-                    i += 1;
-                }
-                out
-            }
-            _ => self.raw_sql.clone(),
-        }
+    pub fn compiled_sql(&self) -> &str {
+        &self.raw_sql
     }
 
     pub fn execute_sync(&self, conn: &rusqlite::Connection) -> Result<usize, String> {
@@ -1091,7 +784,6 @@ impl SqlQuery {
         let count_sql = format!("SELECT COUNT(*) as total_count FROM ({}) as subquery", self.raw_sql);
         let mut count_query = SqlQuery::new(count_sql);
         count_query.bindings = self.bindings.clone();
-        count_query.engine = self.engine;
 
         let count_rows = count_query.fetch_all().await?;
         let total = count_rows.first()
@@ -1103,7 +795,6 @@ impl SqlQuery {
         let paged_sql = format!("{} LIMIT {} OFFSET {}", self.raw_sql, per_page, offset);
         let mut paged_query = SqlQuery::new(paged_sql);
         paged_query.bindings = self.bindings.clone();
-        paged_query.engine = self.engine;
 
         let items = paged_query.fetch_all().await?;
         Ok(Paginated::new(items, total, page, per_page))
@@ -1215,7 +906,7 @@ impl<T> Paginated<T> {
     }
 }
 
-/// Trait for defining database seeders (similar to Laravel's Seeder)
+/// Trait for defining database seeders
 pub trait Seeder: Send + Sync {
     fn name(&self) -> &'static str;
     fn run(&self, db: &Database) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
@@ -1271,31 +962,23 @@ fn global_db_lock() -> &'static RwLock<Option<Database>> {
     GLOBAL_DB.get_or_init(|| RwLock::new(None))
 }
 
-/// Universal Database Manager supporting SQLite, PostgreSQL, MySQL, MongoDB, and Redis
+/// SQLite Database Manager for Terminus applications
 #[derive(Clone)]
 pub struct Database {
-    pub engine: DatabaseEngine,
     pub config: DatabaseConfig,
     conn: Arc<Mutex<rusqlite::Connection>>,
-    mongo_store: Arc<Mutex<HashMap<String, Vec<serde_json::Value>>>>,
-    redis_store: Arc<Mutex<HashMap<String, (String, Option<DateTime<Utc>>)>>>,
 }
 
 impl Database {
-    /// Create a fast in-memory database
+    /// Create a fast in-memory SQLite database
     pub fn memory() -> Result<Self, rusqlite::Error> {
         let conn = rusqlite::Connection::open_in_memory()?;
         let config = DatabaseConfig {
-            engine: DatabaseEngine::Sqlite,
             database: ":memory:".to_string(),
-            ..Default::default()
         };
         Ok(Self {
-            engine: DatabaseEngine::Sqlite,
             config,
             conn: Arc::new(Mutex::new(conn)),
-            mongo_store: Arc::new(Mutex::new(HashMap::new())),
-            redis_store: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -1304,40 +987,26 @@ impl Database {
         let path_str = path.as_ref().to_string_lossy().to_string();
         let conn = rusqlite::Connection::open(path)?;
         let config = DatabaseConfig {
-            engine: DatabaseEngine::Sqlite,
             database: path_str,
-            ..Default::default()
         };
         Ok(Self {
-            engine: DatabaseEngine::Sqlite,
             config,
             conn: Arc::new(Mutex::new(conn)),
-            mongo_store: Arc::new(Mutex::new(HashMap::new())),
-            redis_store: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
-    /// Connect to any supported database engine via connection URL (sqlite, postgres, mysql, mongodb, redis)
+    /// Connect to SQLite database via connection URL (sqlite://path/to.db, :memory:, or file path)
     pub fn connect(url: &str) -> Result<Self, String> {
         let config = DatabaseConfig::from_url(url)?;
-        let engine = config.engine;
-        let sqlite_conn = match engine {
-            DatabaseEngine::Sqlite => {
-                if config.database == ":memory:" {
-                    rusqlite::Connection::open_in_memory().map_err(|e| e.to_string())?
-                } else {
-                    rusqlite::Connection::open(&config.database).map_err(|e| e.to_string())?
-                }
-            }
-            _ => rusqlite::Connection::open_in_memory().map_err(|e| e.to_string())?,
+        let sqlite_conn = if config.database == ":memory:" {
+            rusqlite::Connection::open_in_memory().map_err(|e| e.to_string())?
+        } else {
+            rusqlite::Connection::open(&config.database).map_err(|e| e.to_string())?
         };
 
         Ok(Self {
-            engine,
             config,
             conn: Arc::new(Mutex::new(sqlite_conn)),
-            mongo_store: Arc::new(Mutex::new(HashMap::new())),
-            redis_store: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -1390,16 +1059,6 @@ impl Database {
     /// Get raw connection reference Arc
     pub fn connection_arc(&self) -> Arc<Mutex<rusqlite::Connection>> {
         self.conn.clone()
-    }
-
-    /// Access a named MongoDB document collection
-    pub fn collection(&self, name: &str) -> MongoCollection {
-        MongoCollection::new(name, self.mongo_store.clone())
-    }
-
-    /// Access the unified Redis key-value store
-    pub fn redis(&self) -> RedisStore {
-        RedisStore::new(self.config.to_url(), self.redis_store.clone())
     }
 }
 

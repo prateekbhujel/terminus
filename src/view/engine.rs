@@ -1,6 +1,6 @@
 //! Fullstack HTML view renderer for Terminus web applications.
 //!
-//! Provides a Blade/Rails-style View engine that integrates automatically
+//! Provides a server-rendered View engine that integrates automatically
 //! with sessions, one-time flash messages, CSRF tokens, authenticated users,
 //! and responsive Tailwind CSS layouts.
 

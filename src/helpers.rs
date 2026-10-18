@@ -543,7 +543,7 @@ macro_rules! abort_unless {
     };
 }
 
-/// Fluent redirect response supporting Laravel-style chained flash messages (`redirect("/posts").with("success", "Saved!")`).
+/// Fluent redirect response supporting chained flash messages (`redirect("/posts").with("success", "Saved!")`).
 #[derive(Debug, Clone)]
 pub struct RedirectResponse {
     pub url: String,

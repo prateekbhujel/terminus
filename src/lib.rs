@@ -32,7 +32,7 @@ pub mod ws;
 
 pub mod db {
     pub use crate::orm::{
-        Database, DatabaseConfig, DatabaseEngine, MongoCollection, Paginated, RedisStore, Seeder,
+        Database, DatabaseConfig, Paginated, Seeder,
         SeederRegistry, SqlQuery,
     };
     pub use crate::query;
@@ -44,9 +44,7 @@ pub mod prelude {
     pub use crate::auth::Hash;
     pub use crate::cache::{CacheDriver, MemoryCache, RedisCache};
     pub use crate::client::{
-        BarcodeScanEvent, DesktopMessage, DeviceRecord, DeviceRegistry, DeviceTelemetry,
-        NativeDesktopBridge, OfflineSyncQueue, OfflineSyncRecord, Platform, PushDispatcher,
-        PushNotification, SdkEndpoint, SdkGenerator,
+        Platform, PushDispatcher, PushNotification, SdkEndpoint, SdkGenerator,
     };
     pub use crate::document::{ExcelDocument, PdfDocument};
     pub use crate::domain::{
@@ -70,8 +68,8 @@ pub mod prelude {
         ValidationErrors, Validator,
     };
     pub use crate::orm::{
-        BelongsTo, Blueprint, Database, DatabaseConfig, DatabaseEngine, DynamicModel, HasMany,
-        Model, ModelQuery, MongoCollection, Paginated, RedisStore, Schema, Seeder, SeederRegistry,
+        BelongsTo, Blueprint, Database, DatabaseConfig, DynamicModel, HasMany,
+        Model, ModelQuery, Paginated, Schema, Seeder, SeederRegistry,
         SqlQuery,
     };
     pub use crate::query;
