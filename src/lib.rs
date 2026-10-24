@@ -49,11 +49,12 @@ pub mod prelude {
     pub use crate::form::{FieldType, Form, FormField, FormSection, Section};
     pub use crate::helpers::{
         abort, abort_403, abort_404, abort_if, abort_unless, auth, can, can_all, can_any, cannot,
-        config, config_set, env, flash, flash_error, flash_success, is_admin, is_superadmin, now,
-        redirect, request, session, set_current_request, set_current_session, set_current_user,
-        timestamp, today, user, user_id, with_request, with_user, AbortError, AuthUser, MaybeAuthUser,
-        Redirect, RedirectResponse, RequestAccessor, RequestInfo, Result,
+        config, config_set, csrf_field, csrf_token, env, flash, flash_error, flash_success, is_admin,
+        is_superadmin, now, redirect, request, session, set_current_request, set_current_session,
+        set_current_user, timestamp, today, user, user_id, with_request, with_user, AbortError,
+        AuthUser, MaybeAuthUser, Redirect, RedirectResponse, RequestAccessor, RequestInfo, Result,
     };
+    pub use crate::session::{secure_random_bytes, secure_random_hex};
     pub use crate::integrations::{OAuthProvider, WebhookVerifier};
     pub use crate::mail::{ArrayTransport, FileTransport, LogTransport, MailMessage, MailTransport, Mailer};
     pub use crate::module::{

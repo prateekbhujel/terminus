@@ -264,9 +264,8 @@ impl TokenRepository for MemoryTokenStore {
         let id = count_guard.to_string();
         *count_guard += 1;
 
-        // Generate pseudo-random token entropy
-        let entropy = format!("{:x}{:x}{:x}", chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0), id.len(), 42);
-        let plain_secret = format!("{entropy}terminus_secret_key");
+        // Generate cryptographically secure token entropy
+        let plain_secret = format!("{}_{}", id, crate::session::secure_random_hex(32));
         let hashed = sha256_hex(plain_secret.as_bytes());
 
         let token_record = PersonalAccessToken {
@@ -385,7 +384,7 @@ impl TokenRepository for SqliteTokenStore {
     ) -> Result<NewAccessToken, String> {
         let conn = self.conn.lock().unwrap();
         let id = format!("{:x}", chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0));
-        let plain_secret = format!("{id}_terminus_token_secret");
+        let plain_secret = format!("{}_{}", id, crate::session::secure_random_hex(32));
         let hashed = sha256_hex(plain_secret.as_bytes());
         let abilities_json = serde_json::to_string(&abilities).unwrap_or_else(|_| "[\"*\"]".into());
         let now = chrono::Utc::now().to_rfc3339();

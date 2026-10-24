@@ -51,6 +51,8 @@ pub struct TableQuery {
 pub struct LoginForm {
     pub email: Option<String>,
     pub password: Option<String>,
+    #[serde(alias = "csrf_token")]
+    pub _csrf_token: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -342,6 +344,43 @@ fn resolve_authenticated_user(panel: &AdminPanel, headers: &HeaderMap) -> Option
             });
         } else if trimmed == "terminus_session=authenticated" {
             return Some(User::default_admin());
+        } else if let Some(session_id) = trimmed.strip_prefix("terminus_session=") {
+            let session_id = session_id.trim();
+            let verified_id = if session_id.contains('.') {
+                if let Some(secret) = crate::helpers::config("app.key").or_else(|| crate::helpers::env("APP_KEY")) {
+                    crate::session::Session::verify_signed_cookie(session_id, secret.as_bytes())
+                } else {
+                    None
+                }
+            } else {
+                Some(session_id.to_string())
+            };
+
+            if let Some(id) = verified_id {
+                let sess = crate::session::SessionStore::global().get_or_create(Some(&id));
+                if let Some(email) = sess.get("user_email") {
+                    if let Some(ref repo) = panel.user_repo {
+                        if let Some(user) = repo.find_by_email(&email) {
+                            return Some(user);
+                        }
+                    }
+                    let role = match sess.get("user_role").as_deref() {
+                        Some("superadmin") => Role::Superadmin,
+                        Some("admin") => Role::Admin,
+                        Some("editor") => Role::Editor,
+                        _ => Role::Member,
+                    };
+                    return Some(User {
+                        id: sess.get("user_id").unwrap_or_else(|| "1".into()),
+                        name: sess.get("user_name").unwrap_or_else(|| email.clone()),
+                        email,
+                        role,
+                        status: crate::domain::UserStatus::Active,
+                        created_at: "2026-10-07".into(),
+                        ..Default::default()
+                    });
+                }
+            }
         }
     }
     None
@@ -397,10 +436,21 @@ async fn login_submit(panel: Arc<AdminPanel>, Form(form): Form<LoginForm>) -> Re
     };
 
     if let Some(user) = user_to_login {
+        let session = crate::session::SessionStore::global().get_or_create(None);
+        session.set("user_id", &user.id);
+        session.set("user_email", &user.email);
+        session.set("user_name", &user.name);
+        session.set("user_role", match user.role {
+            Role::Founder | Role::Superadmin => "superadmin",
+            Role::Admin => "admin",
+            Role::Editor => "editor",
+            _ => "member",
+        });
+
         let mut response = Redirect::to("/admin").into_response();
         let cookie_str = format!(
-            "terminus_session=user:{}; Path=/admin; HttpOnly; SameSite=Lax",
-            user.email
+            "terminus_session={}; Path=/admin; HttpOnly; SameSite=Lax",
+            session.id()
         );
         response.headers_mut().insert(
             SET_COOKIE,

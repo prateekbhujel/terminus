@@ -70,7 +70,7 @@ impl Default for Session {
 impl Session {
     /// Creates a new Session with a secure random identifier.
     pub fn new() -> Self {
-        let random_id = format!("{:016x}{:016x}", rand_u64(), rand_u64());
+        let random_id = secure_random_hex(16);
         Self::with_id(random_id)
     }
 
@@ -176,7 +176,7 @@ impl Session {
         if let Some(token) = self.get(CSRF_KEY) {
             token
         } else {
-            let token = format!("{:016x}{:016x}", rand_u64(), rand_u64());
+            let token = secure_random_hex(16);
             self.set(CSRF_KEY, &token);
             token
         }
@@ -326,18 +326,95 @@ impl SessionStore {
     }
 }
 
-/// Helper returning pseudo-random 64-bit unsigned integer using nanosecond timestamps and memory entropy.
-fn rand_u64() -> u64 {
+/// Axum extractor for `Session`, resolving or provisioning the active web session.
+#[axum::async_trait]
+impl<S> axum::extract::FromRequestParts<S> for Session
+where
+    S: Send + Sync,
+{
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(parts: &mut axum::http::request::Parts, _state: &S) -> std::result::Result<Self, Self::Rejection> {
+        let mut session_id: Option<String> = None;
+        if let Some(cookie_val) = parts.headers.get(axum::http::header::COOKIE).and_then(|v| v.to_str().ok()) {
+            for part in cookie_val.split(';') {
+                let trimmed = part.trim();
+                if let Some(val) = trimmed.strip_prefix("terminus_session=") {
+                    let val = val.trim();
+                    if val.contains('.') {
+                        if let Some(app_secret) = crate::helpers::config("app.key").or_else(|| crate::helpers::env("APP_KEY")) {
+                            if let Some(verified) = Session::verify_signed_cookie(val, app_secret.as_bytes()) {
+                                session_id = Some(verified);
+                                break;
+                            }
+                        }
+                    }
+                    session_id = Some(val.to_string());
+                    break;
+                }
+            }
+        }
+
+        let session = SessionStore::global().get_or_create(session_id.as_deref());
+        crate::helpers::set_current_session(Some(session.clone()));
+        Ok(session)
+    }
+}
+
+/// Fills a buffer with cryptographically secure random bytes from the OS entropy source.
+/// On Unix, reads directly from `/dev/urandom`. On other targets or as fallback,
+/// mixes system time, high-resolution monotonic timestamps, memory addresses,
+/// process ID, thread ID, and an atomic sequence into a SHA-256 hash.
+pub fn secure_random_bytes(buf: &mut [u8]) {
+    #[cfg(unix)]
+    {
+        use std::io::Read;
+        if let Ok(mut f) = std::fs::File::open("/dev/urandom") {
+            if f.read_exact(buf).is_ok() {
+                return;
+            }
+        }
+    }
+
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(1);
+    let count = COUNTER.fetch_add(1, Ordering::Relaxed);
+
     use std::time::SystemTime;
-    let seed = SystemTime::now()
+    let now = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .map(|d| d.as_nanos())
-        .unwrap_or(123456789);
-    let mut x = (seed as u64) ^ 0x517cc1b727220a95;
-    x ^= x >> 12;
-    x ^= x << 25;
-    x ^= x >> 27;
-    x.wrapping_mul(0x2545f4914f6cdd1d)
+        .unwrap_or(0);
+
+    let stack_addr = &buf as *const _ as usize;
+    let pid = std::process::id();
+    let tid = format!("{:?}", std::thread::current().id());
+
+    let mut entropy = Vec::with_capacity(128);
+    entropy.extend_from_slice(&now.to_le_bytes());
+    entropy.extend_from_slice(&count.to_le_bytes());
+    entropy.extend_from_slice(&stack_addr.to_le_bytes());
+    entropy.extend_from_slice(&pid.to_le_bytes());
+    entropy.extend_from_slice(tid.as_bytes());
+
+    let mut filled = 0;
+    let mut round: u64 = 0;
+    while filled < buf.len() {
+        let mut round_entropy = entropy.clone();
+        round_entropy.extend_from_slice(&round.to_le_bytes());
+        let hash = crate::token::sha256(&round_entropy);
+        let needed = std::cmp::min(buf.len() - filled, hash.len());
+        buf[filled..filled + needed].copy_from_slice(&hash[..needed]);
+        filled += needed;
+        round += 1;
+    }
+}
+
+/// Returns a cryptographically secure random hexadecimal string of the specified byte length.
+pub fn secure_random_hex(bytes: usize) -> String {
+    let mut buf = vec![0u8; bytes];
+    secure_random_bytes(&mut buf);
+    buf.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
 /// Constant-time string equality check preventing timing side-channel attacks.

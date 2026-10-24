@@ -206,3 +206,5 @@ pub fn view(title: impl Into<String>, content: impl Into<String>) -> View {
 pub fn raw_html(content: impl Into<String>) -> View {
     View::raw(content)
 }
+
+pub use crate::helpers::{csrf_field, csrf_token};

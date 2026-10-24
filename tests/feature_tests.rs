@@ -2437,5 +2437,65 @@ fn test_task_scheduler_and_frequency() {
     assert!(flag.load(Ordering::SeqCst));
 }
 
+#[tokio::test]
+async fn test_session_axum_extractor_and_cookie_resolution() {
+    use terminus::prelude::*;
+    use axum::extract::FromRequestParts;
+    use axum::http::Request;
 
+    // 1. Session extractor with no cookies generates a fresh active session
+    let req = Request::builder()
+        .uri("/dashboard")
+        .body(())
+        .unwrap();
+    let (mut parts, _) = req.into_parts();
+    let session = Session::from_request_parts(&mut parts, &()).await.unwrap();
+    assert!(!session.id().is_empty());
+    session.set("user_email", "operator@terminus.dev");
 
+    // 2. Subsequent request with the session cookie recovers identical session state
+    let cookie_header = session.cookie_header();
+    let req2 = Request::builder()
+        .uri("/settings")
+        .header(axum::http::header::COOKIE, cookie_header)
+        .body(())
+        .unwrap();
+    let (mut parts2, _) = req2.into_parts();
+    let recovered_session = Session::from_request_parts(&mut parts2, &()).await.unwrap();
+    assert_eq!(recovered_session.id(), session.id());
+    assert_eq!(recovered_session.get("user_email").as_deref(), Some("operator@terminus.dev"));
+}
+
+#[test]
+fn test_csrf_field_and_token_helpers() {
+    use terminus::prelude::*;
+
+    let token = csrf_token();
+    assert_eq!(token.len(), 32);
+
+    let field = csrf_field();
+    assert!(field.starts_with("<input type=\"hidden\" name=\"_csrf_token\" value=\""));
+    assert!(field.contains(&token));
+    assert!(field.ends_with("\">"));
+
+    let sess = session();
+    assert!(sess.verify_csrf_token(&token));
+    assert!(!sess.verify_csrf_token("forged_csrf_token"));
+}
+
+#[test]
+fn test_cryptographic_secure_random_entropy() {
+    use terminus::prelude::*;
+    use std::collections::HashSet;
+
+    let mut generated = HashSet::new();
+    for _ in 0..100 {
+        let hex = secure_random_hex(16);
+        assert_eq!(hex.len(), 32);
+        assert!(generated.insert(hex), "Detected duplicate entropy generation");
+    }
+
+    let mut buf = [0u8; 32];
+    secure_random_bytes(&mut buf);
+    assert!(buf.iter().any(|&b| b != 0), "Entropy buffer must not be all zeroes");
+}

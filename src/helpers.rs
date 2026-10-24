@@ -10,6 +10,7 @@ use chrono::{DateTime, Utc};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use crate::domain::User;
+pub use crate::session::{secure_random_bytes, secure_random_hex};
 use crate::session::{Session, SessionStore};
 
 tokio::task_local! {
@@ -305,6 +306,16 @@ pub fn flash_success(msg: impl Into<String>) {
 /// Flashes an error notification into the active session.
 pub fn flash_error(msg: impl Into<String>) {
     session().flash_error(msg);
+}
+
+/// Returns the active session's secure CSRF token.
+pub fn csrf_token() -> String {
+    session().csrf_token()
+}
+
+/// Generates a hidden HTML input element containing the active session's CSRF token for web forms.
+pub fn csrf_field() -> String {
+    format!(r#"<input type="hidden" name="_csrf_token" value="{}">"#, csrf_token())
 }
 
 /// Primary authorization check: determines if the current authenticated user can perform an action.

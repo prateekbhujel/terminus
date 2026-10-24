@@ -1,4 +1,5 @@
 pub fn render_login_page(error_msg: Option<&str>) -> String {
+    let csrf_token = crate::helpers::csrf_token();
     let error_banner = if let Some(err) = error_msg {
         format!(
             r#"<div class="mb-5 p-3 rounded-md bg-rose-500/10 border border-rose-500/20 text-xs text-rose-400 flex items-center gap-2">
@@ -85,6 +86,7 @@ pub fn render_login_page(error_msg: Option<&str>) -> String {
             </div>
 
             <form method="POST" action="/admin/login" class="space-y-4">
+                <input type="hidden" name="_csrf_token" value="{csrf_token}">
                 <div>
                     <label class="block text-xs font-medium text-zinc-300 mb-1.5" for="email">Email address</label>
                     <input 
@@ -155,7 +157,9 @@ pub fn render_login_page(error_msg: Option<&str>) -> String {
         }}
     </script>
 </body>
-</html>"#
+</html>"#,
+        error_banner = error_banner,
+        csrf_token = csrf_token
     )
 }
 
@@ -165,11 +169,7 @@ pub struct Hash;
 impl Hash {
     /// Hash a plaintext password with a random salt and 10,000 iterations
     pub fn make(password: &str) -> String {
-        let salt = format!(
-            "{:x}{:x}",
-            chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0),
-            std::process::id()
-        );
+        let salt = crate::session::secure_random_hex(16);
         Self::make_with_salt(password, &salt, 10_000)
     }
 
