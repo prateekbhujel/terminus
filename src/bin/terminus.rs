@@ -135,7 +135,7 @@ fn print_banner() {
  |_   _|__ _ __ _ __ ___ (_)_ __  _   _ ___ 
    | |/ _ \\ '__| '_ ` _ \\| | '_ \\| | | / __|
    | |  __/ |  | | | | | | | | | | |_| \\__ \\
-   |_|\\___|_|  |_| |_| |_|_|_| |_|\\__,_|___/\x1b[0m\n\x1b[1mTerminus Framework CLI\x1b[0m v0.1.0 — Agent-Native Batteries-Included Application Framework for Axum\n");
+   |_|\\___|_|  |_| |_| |_|_|_| |_|\\__,_|___/\x1b[0m\n\x1b[1mTerminus Framework CLI\x1b[0m v0.0.1 — Agent-Native Batteries-Included Application Framework for Axum\n");
 }
 
 fn print_help() {
@@ -144,7 +144,7 @@ fn print_help() {
 }
 
 fn print_version() {
-    println!("Terminus Framework CLI v0.1.0 (Rust edition 2021)");
+    println!("Terminus Framework CLI v0.0.1 (Rust edition 2021)");
 }
 
 fn make_resource(name_opt: Option<&str>) {
@@ -1597,7 +1597,7 @@ fn run_migration_rollback() {
 fn run_tinker(exec_opt: Option<&str>) {
     use std::io::{self, BufRead, Write};
 
-    println!("\x1b[1;36mTerminus Tinker REPL v0.1.0\x1b[0m");
+    println!("\x1b[1;36mTerminus Tinker REPL v0.0.1\x1b[0m");
     println!("Database: \x1b[33mterminus.db\x1b[0m (SQLite) | Type 'help' or 'exit'");
 
     let db_path = "terminus.db";

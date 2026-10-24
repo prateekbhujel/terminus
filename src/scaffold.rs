@@ -283,7 +283,7 @@ pub fn generate_cargo_toml(config: &ProjectConfig) -> String {
     format!(
         r#"[package]
 name = "{name}"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2021"
 
 [dependencies]

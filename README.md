@@ -5,7 +5,7 @@
 Web Admin • Embedded SQLite Persistence • HMAC Sessions • Compile-Time Validation • Deterministic Machine Introspection
 
 [![CI](https://github.com/prateekbhujel/terminus/actions/workflows/rust.yml/badge.svg)](https://github.com/prateekbhujel/terminus/actions/workflows/rust.yml)
-[![Version: 0.1.0](https://img.shields.io/badge/crates.io-v0.1.0-emerald.svg)](https://crates.io/crates/terminus-framework)
+[![Version: 0.0.1](https://img.shields.io/badge/crates.io-v0.0.1-emerald.svg)](https://crates.io/crates/terminus-framework)
 [![Docs](https://img.shields.io/badge/docs.rs-terminus--framework-blue.svg)](https://docs.rs/terminus-framework)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -77,7 +77,7 @@ Add Terminus to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-terminus-framework = "0.1.0"
+terminus-framework = "0.0.1"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -125,7 +125,7 @@ Outputs a structured, zero-hallucination JSON specification of your entire appli
 ```json
 {
   "framework": "terminus-framework",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "app_name": "Warehouse Master",
   "routes": [
     { "method": "GET", "path": "/api/items", "handler_name": "list_items", "auth_required": true }
