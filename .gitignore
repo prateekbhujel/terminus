@@ -1,0 +1,17 @@
+/target
+**/*.rs.bk
+Cargo.lock
+*.db
+*.sqlite
+*.sqlite3
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo

@@ -1,0 +1,535 @@
+# Terminus
+
+**The agent-native, batteries-included application framework for Axum and Rust.**
+
+Web Admin • Embedded SQLite Persistence • HMAC Sessions • Compile-Time Validation • Deterministic Machine Introspection
+
+[![CI](https://github.com/prateekbhujel/terminus/actions/workflows/rust.yml/badge.svg)](https://github.com/prateekbhujel/terminus/actions/workflows/rust.yml)
+[![Version: 0.0.1](https://img.shields.io/badge/crates.io-v0.0.1-emerald.svg)](https://crates.io/crates/terminus-framework)
+[![Docs](https://img.shields.io/badge/docs.rs-terminus--framework-blue.svg)](https://docs.rs/terminus-framework)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+---
+
+## Why Terminus?
+
+[Axum](https://github.com/tokio-rs/axum) is a world-class, high-performance web router. But it is intentionally minimal. For production web services, developers repeatedly re-implement the same foundational layers from scratch:
+
+- An administrative dashboard and CRUD interfaces
+- SQLite database connection management and batch migrations
+- Request validation with structured JSON error responses
+- Signed session cookies, CSRF protection, and flash message bags
+- **Deterministic machine introspection**, so autonomous AI coding agents can inspect models, routes, and database tables without hallucination
+
+Terminus provides strong conventions and full-stack solutions to these needs, designed from first principles around what makes sense in Rust.
+
+---
+
+## 2-Minute Quickstart
+
+### Method 1: The Global Installer (`terminus new`)
+
+Install the standalone Terminus CLI globally:
+
+**macOS / Linux / WSL / Alpine:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/prateekbhujel/terminus/main/install.sh | sh
+```
+
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/prateekbhujel/terminus/main/install.ps1 | iex
+```
+
+**Or via Cargo:**
+```bash
+cargo install terminus-framework
+```
+
+Scaffold an application from anywhere:
+
+```bash
+# Interactive project wizard
+terminus new my_app
+
+# Or scaffold non-interactively
+terminus new my_app --preset=fullstack --port=3000
+
+cd my_app
+cargo run
+```
+
+Open `http://localhost:3000` in your browser, or check the JSON health endpoint at `http://localhost:3000/api/v1/health`.
+
+### Method 2: Run the Working Quickstart Example
+
+Clone the repository and run the working reference quickstart:
+
+```bash
+git clone https://github.com/prateekbhujel/terminus.git
+cd terminus
+cargo run --example quickstart
+```
+
+The reference example includes the admin dashboard at `http://localhost:3000/admin` backed by embedded SQLite.
+
+### Method 3: Add to an Existing Cargo Project
+
+Add Terminus to your `Cargo.toml`:
+
+```toml
+[dependencies]
+terminus-framework = "0.0.1"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+```
+
+Create a minimal application in `src/main.rs`:
+
+```rust
+use terminus::prelude::*;
+use std::sync::Arc;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let db = Database::open("terminus.db")?;
+    let user_repo = Arc::new(SqliteUserRepository::new(db.connection_arc())?);
+    let identity_repo: Arc<dyn UserRepository> = user_repo.clone();
+    let credentials = user_repo.clone();
+
+    // Admin sign-in has no default credentials. Verify passwords against
+    // your users table (Argon2id via `Hash`), or supply any verifier with
+    // `authenticate_with`. Without a verifier, sign-in is denied.
+    let admin = AdminPanel::new()
+        .brand_name("My App Admin")
+        .users(identity_repo)
+        .authenticate_with(move |email, password| {
+            credentials.verify_credentials(email, password)
+        })
+        .resource(AuditLogResource::new(Arc::new(SqliteAuditRepository::new(db.connection_arc())?)));
+
+    App::new()
+        .name("My Application")
+        .port(3000)
+        .database(db)
+        .panel(admin)
+        .run()
+        .await
+}
+```
+
+---
+
+## Killer Feature: Deterministic Machine Introspection
+
+When developers pair program with autonomous AI coding agents, agents frequently hallucinate route names, database columns, and model relationships because they must guess across dozens of files.
+
+Terminus solves this with **deterministic application introspection**:
+
+```bash
+terminus schema --json
+```
+
+Outputs a structured, zero-hallucination JSON specification of your entire application:
+
+```json
+{
+  "framework": "terminus-framework",
+  "version": "0.0.1",
+  "app_name": "Warehouse Master",
+  "routes": [
+    { "method": "GET", "path": "/api/items", "handler_name": "list_items", "auth_required": true }
+  ],
+  "models": [
+    {
+      "name": "Item",
+      "table": "items",
+      "fields": [
+        { "name": "id", "rust_type": "String", "sql_type": "TEXT", "primary_key": true },
+        { "name": "sku", "rust_type": "String", "sql_type": "TEXT" },
+        { "name": "quantity", "rust_type": "i64", "sql_type": "INTEGER" }
+      ]
+    }
+  ],
+  "resources": [
+    { "name": "Item", "slug": "items", "searchable_fields": ["sku", "name"] }
+  ]
+}
+```
+
+You can also view a clean terminal summary:
+
+```bash
+terminus schema
+```
+
+---
+
+## Compile-Time Type-Safe Validation (`Valid<T>`)
+
+Classical web frameworks use stringly-typed rules like `"required|email|max:255"`, which fail silently at runtime if an agent or developer makes a typo.
+
+Terminus uses fluent, compile-checked validation in Rust:
+
+```rust
+use terminus::prelude::*;
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CreateUserRequest {
+    pub email: String,
+    pub name: String,
+    pub age: Option<u32>,
+}
+
+impl Validate for CreateUserRequest {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        let mut errors = ValidationErrors::new();
+        if self.name.trim().is_empty() {
+            errors.add("name", "Name is required");
+        }
+        if !self.email.contains('@') {
+            errors.add("email", "Valid email address required");
+        }
+        if let Some(age) = self.age {
+            if age < 18 {
+                errors.add("age", "Must be at least 18 years old");
+            }
+        }
+        if errors.is_empty() { Ok(()) } else { Err(errors) }
+    }
+}
+```
+
+### The `Valid<T>` Extractor
+
+Extract, deserialize, and validate request payloads in a single handler argument. If validation fails, Terminus halts request execution and returns an HTTP 422 response with structured JSON:
+
+```rust
+pub async fn store(Valid(payload): Valid<CreateUserRequest>) -> Result<Redirect> {
+    // Execution only reaches here if payload passed all validation checks!
+    Ok(redirect("/users").with_success("User created successfully!"))
+}
+```
+
+HTTP 422 JSON error response:
+
+```json
+{
+  "message": "Validation failed",
+  "errors": {
+    "email": ["Valid email address required"]
+  }
+}
+```
+
+---
+
+## Embedded SQLite Persistence & Batch Migrations
+
+Terminus includes a zero-configuration SQLite persistence layer backed by `rusqlite`:
+
+```rust
+use terminus::prelude::*;
+
+let db = Database::open("app.db")?;
+
+// 1. Raw DDL execution
+db.execute("CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, title TEXT)")?;
+
+// 2. Ergonomic parameterized query execution
+let affected = db.with_conn(|conn| {
+    conn.execute(
+        "INSERT INTO items (title) VALUES (?1)",
+        rusqlite::params!["Hardware Scanner Node"],
+    )
+})?;
+```
+
+### Batch Migrations & Rollback
+
+Manage database evolution with deterministic SQL migrations:
+
+```bash
+terminus make:migration create_orders_table
+```
+
+Creates timestamped migrations under `migrations/`:
+
+```sql
+-- migrations/20261018090000_create_orders_table.sql
+CREATE TABLE IF NOT EXISTS orders (
+    id TEXT PRIMARY KEY,
+    customer_name TEXT NOT NULL,
+    total_cents INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+```
+
+Manage migrations via CLI:
+
+```bash
+terminus migrate           # Run all pending migrations in a batch
+terminus migrate:status    # Inspect execution batch and timestamp
+terminus migrate:rollback  # Roll back the most recent migration batch
+```
+
+---
+
+## Cryptographic HMAC-SHA256 Signed Sessions
+
+Terminus features pure-Rust RFC 2104 HMAC-SHA256 session management with zero external C dependencies:
+
+```rust
+use terminus::prelude::*;
+
+let secret = b"production_secret_key_at_least_32_bytes";
+let session = Session::new();
+session.set("user_id", "usr_99182");
+
+// 1. Generate tamper-proof signed cookie header (id.signature)
+let cookie_header = session.signed_cookie_header(secret);
+
+// 2. Constant-time signature verification
+let verified_id = Session::verify_signed_cookie(cookie_val, secret);
+assert_eq!(verified_id, Some(session.id().to_string()));
+```
+
+- **Constant-Time Verification**: Prevents timing attacks when verifying session signatures.
+- **CSRF Protection**: Automatic per-session tokens (`session.csrf_token()`) and verification (`session.verify_csrf_token(&token)`).
+- **One-Time Flash Messages**: Alerts persist across HTTP redirects and clear automatically on subsequent requests.
+
+---
+
+## Server-Rendered Admin Panel
+
+Define rich admin interfaces using declarative Rust:
+
+```rust
+use terminus::prelude::*;
+
+pub struct ProductResource;
+
+impl Resource for ProductResource {
+    fn name(&self) -> &str { "Product" }
+    fn plural_name(&self) -> &str { "Products" }
+    fn slug(&self) -> &str { "products" }
+
+    fn table(&self) -> Table {
+        Table::new()
+            .column(Column::text("id").label("ID").sortable().searchable())
+            .column(Column::text("name").label("Name").sortable().searchable())
+            .column(Column::badge("status", vec![
+                ("active", "emerald"),
+                ("draft", "amber"),
+                ("archived", "rose"),
+            ]))
+            .column(Column::text("createdAt").label("Created At").sortable())
+            .page_size(10)
+    }
+
+    fn form(&self) -> Form {
+        Form::new()
+            .field(FormField::text("name").required().placeholder("Item name"))
+            .field(FormField::select("status", vec![
+                ("active", "Active"),
+                ("draft", "Draft"),
+                ("archived", "Archived"),
+            ]))
+    }
+
+    fn fetch_rows(&self, query: &QueryState) -> (Vec<RowData>, usize) {
+        (vec![], 0)
+    }
+}
+```
+
+---
+
+## Headless Integration Testing (`TestClient`)
+
+Writing HTTP integration tests for web APIs often requires spinning up TCP listeners, managing OS ports, or writing verbose `tower::ServiceExt::oneshot` boilerplate.
+
+Terminus provides an in-memory, headless `TestClient` with fluent assertions:
+
+```rust
+use terminus::prelude::*;
+
+#[tokio::test]
+async fn test_items_api() {
+    let app = App::new()
+        .get("/api/health", || async {
+            json_response(serde_json::json!({ "status": "ok" }))
+        })
+        .post("/api/items", |Valid(item): Valid<CreateItemRequest>| async move {
+            json_response(serde_json::json!({ "created": true }))
+        });
+
+    let client = TestClient::new(app);
+
+    // 1. GET assertion
+    let res = client.get("/api/health").await;
+    res.assert_ok().assert_contains("ok");
+
+    // 2. Validation failure assertion (HTTP 422)
+    let invalid = client.post("/api/items", serde_json::json!({})).await;
+    invalid.assert_unprocessable();
+}
+```
+
+---
+
+## OpenAPI 3.0.3 & TypeScript Client Contracts
+
+Rather than maintaining brittle bespoke SDK generators, Terminus generates standard OpenAPI 3.0.3 specifications and typed TypeScript contracts:
+
+```bash
+# Export standard OpenAPI 3.0.3 specification
+terminus make:sdk --lang=openapi
+
+# Export typed TypeScript client
+terminus make:sdk --lang=ts
+```
+
+The resulting `openapi.json` can be plugged directly into any industry-standard code generator (`openapi-generator-cli`, `@hey-api/openapi-ts`, or native language generators).
+
+---
+
+## Empirical Benchmarks: Terminus vs. Plain Axum
+
+Run the benchmark suite locally:
+
+```bash
+cargo run --example benchmark --release
+```
+
+Example v0.0.1 release-mode run on Apple Silicon, with 50,000 in-memory HTTP requests and 20,000 SQLite queries:
+
+| Scenario | Throughput | p50 Latency | p95 Latency | p99 Latency |
+|---|---|---|---|---|
+| Plain Axum 0.7 (GET) | 1,055,441 req/s | 0.71 µs | 1.12 µs | 1.21 µs |
+| Terminus App (request context, no CORS) | 922,846 req/s | 0.92 µs | 1.08 µs | 1.12 µs |
+| Terminus App (request context + CORS) | 542,313 req/s | 1.67 µs | 1.79 µs | 1.92 µs |
+| Raw Rusqlite SELECT | 911,929 queries/s | 1.08 µs | 1.12 µs | 1.38 µs |
+
+In this run, request context added 0.18 µs to mean GET latency (+23.78%). Results vary by machine and workload; these microbenchmarks exclude network traffic and deployment overhead. The benchmark prints its measured summary on each run.
+
+---
+
+## Interactive Database REPL (`terminus tinker`)
+
+Terminus includes an interactive console to inspect database tables, execute SQL queries, test password hashing, and evaluate route configurations directly in your terminal:
+
+```bash
+terminus tinker
+```
+
+```text
+================================================================================
+  TERMINUS TINKER — Interactive Database Console & REPL
+  DB: CONNECTED (SQLite) | terminus.db
+================================================================================
+Commands: tables | schema <table> | routes | seed | hash <password> | exit
+
+>>> tables
+[users, orders, personal_access_tokens, _terminus_cache, _terminus_jobs]
+
+>>> SELECT id, name, email, role FROM users LIMIT 2;
++----+-------------+--------------------+------------+
+| id | name        | email              | role       |
++----+-------------+--------------------+------------+
+| 1  | Admin User  | admin@example.com  | superadmin |
+| 2  | Test Member | member@example.com | member     |
++----+-------------+--------------------+------------+
+
+>>> hash secretpassword
+$pbkdf2-sha256$i=10000$<random-salt>$<derived-key>
+```
+
+You can also execute one-off expressions directly from the CLI without entering the interactive prompt:
+
+```bash
+terminus tinker --execute="SELECT count(*) FROM users"
+```
+
+---
+
+## CLI Reference
+
+Run commands directly as `terminus <command>`. The shell and PowerShell installers also provide the `cargo terminus` alias:
+
+```bash
+terminus <command> [options]
+```
+
+| Command | Description |
+|---|---|
+| `new [name] [--preset=...]` | Scaffold a new project (interactive wizard or flags) |
+| `schema [--json]` | Inspect application topology (models, routes, admin resources) |
+| `route:list \| routes` | List registered web routes, admin resources, and API endpoints |
+| `tinker [--execute=...]` | Interactive database REPL console with query evaluation |
+| `make:controller <Name> [-r]` | Scaffold a web controller (or RESTful resource controller) |
+| `make:model <Name> [-mc]` | Scaffold a model with paired migration (-m) and controller (-c) |
+| `make:seeder <Name>` | Scaffold a database seeder class |
+| `make:slice <Name> [--fields=...]` | Scaffold a self-contained vertical domain slice |
+| `agent:guide [--json]` | Display AI agent conventions and architecture directives |
+| `make:resource <Name>` | Scaffold an administrative resource |
+| `make:module <Name>` | Scaffold a domain module |
+| `make:repo <Name>` | Scaffold a SQLite repository implementation |
+| `make:migration <Name>` | Generate a timestamped SQL migration file |
+| `migrate` | Run pending database migrations |
+| `migrate:status` | Show execution status of each migration batch |
+| `migrate:rollback` | Rollback the latest batch of executed database migrations |
+| `db:tables` | Inspect database schema and statistics |
+| `db:seed` | Seed local development accounts (generated one-time password) and sample data |
+| `schedule:run` | Execute due scheduled tasks and recurring in-process cron jobs |
+| `schedule:list` | List scheduled tasks and recurring execution frequencies |
+| `make:sdk [--lang=ts\|openapi]` | Export typed TypeScript client or OpenAPI 3.0.3 specification |
+| `make:token [name]` | Issue a personal access token |
+| `token:list` | List active access tokens |
+| `token:revoke [id]` | Revoke an access token |
+| `cache:clear` | Clear memory cache store |
+
+---
+
+## Verification & Tests
+
+Run the integration and generated-application regression tests:
+
+```bash
+cargo test
+```
+
+The suite covers HTTP request isolation, session and flash cookie roundtrips, SQLite persistence, queue errors, audit logging, and RBAC. It also compiles all generated application presets against the current framework using locally cached dependencies.
+
+---
+
+## Production Scope & Support
+
+Terminus is a batteries-included Axum stack (initial public release):
+
+- **Authentication**: Admin sign-in requires an application-supplied credential verifier (`AdminPanel::authenticate_with`); there are no default or demonstration credentials. Passwords use Argon2id (`Hash::make`), legacy PBKDF2 hashes still verify, and bearer tokens resolve to real, active repository users.
+- **Sessions**: Configure `App::sessions(SessionConfig::sqlite(path, key))` for signed, expiring sessions that persist across restarts, with durable revocation on logout. Keys must be at least 32 bytes; keep `Secure` cookies enabled behind HTTPS.
+- **Queue**: `SqliteJobQueue` workers atomically reserve jobs with expiring leases. Multiple workers may share one database, crashed workers' jobs are reclaimed, and delivery is at-least-once, so handlers must be idempotent.
+- **Migrations**: Migration SQL and bookkeeping commit in one transaction; rollback requires explicit `-- [DOWN]` SQL and never erases history silently. CLI failures exit nonzero.
+
+Versioning follows Semantic Versioning for the public API in `terminus::prelude` and documented modules. Report defects with a minimal reproduction in GitHub Issues, and security reports privately per [SECURITY.md](SECURITY.md).
+
+See [CHANGELOG.md](CHANGELOG.md) for release changes.
+
+---
+
+## Contributing
+
+Contributions are welcome: bug reports with reproductions, fixes, tests, documentation, and new resources. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, checks (`cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo doc`), and pull request expectations.
+
+## Sponsorship
+
+Terminus is maintained by an independent developer. If it saves your team time, consider [sponsoring on GitHub](https://github.com/sponsors/prateekbhujel) to fund maintenance, regression testing, and release work. Sponsorship funds specific upkeep: dependency updates, CI, docs.rs builds, and issue triage.
+
+---
+
+## License
+
+MIT License © 2026 Pratik.

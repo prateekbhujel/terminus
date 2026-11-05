@@ -1,0 +1,76 @@
+[package]
+name = "terminus-framework"
+version = "0.0.1"
+edition = "2021"
+authors = ["Pratik <prateekbhujelpb@gmail.com>"]
+description = "Terminus — High-performance, batteries-included web and API application framework for Rust and Axum."
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/prateekbhujel/terminus"
+homepage = "https://github.com/prateekbhujel/terminus"
+documentation = "https://docs.rs/terminus-framework"
+keywords = ["framework", "fullstack", "web", "axum", "orm"]
+categories = ["web-programming::http-server", "command-line-utilities", "database", "development-tools"]
+
+[lib]
+name = "terminus"
+path = "src/lib.rs"
+
+[dependencies]
+axum = { version = "0.7", features = ["macros", "ws"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["fs", "trace", "cors"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+chrono = { version = "0.4.45", features = ["clock"] }
+argon2 = { version = "0.6", features = ["getrandom"] }
+getrandom = "0.4"
+hmac = "0.13"
+sha2 = "0.11"
+serde_urlencoded = "0.7"
+postgres = { version = "0.19", optional = true }
+mysql = { version = "26", optional = true }
+redis = { version = "0.27", optional = true }
+mongodb = { version = "3", optional = true }
+ureq = { version = "2", features = ["json"], optional = true }
+futures-util = { version = "0.3", optional = true }
+
+[features]
+default = ["postgres", "mysql", "redis", "mongodb", "s3", "oauth"]
+postgres = ["dep:postgres"]
+mysql = ["dep:mysql"]
+redis = ["dep:redis"]
+mongodb = ["dep:mongodb", "dep:futures-util"]
+s3 = ["dep:ureq"]
+oauth = ["dep:ureq"]
+
+[[bin]]
+name = "terminus"
+path = "src/bin/terminus.rs"
+
+[[example]]
+name = "quickstart"
+path = "examples/quickstart.rs"
+
+[[example]]
+name = "universal_wms"
+path = "examples/universal_wms.rs"
+
+[[example]]
+name = "benchmark"
+path = "examples/benchmark.rs"
+
+[profile.dev]
+debug = 1
+split-debuginfo = "unpacked"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

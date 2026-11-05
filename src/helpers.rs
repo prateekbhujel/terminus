@@ -1,0 +1,761 @@
+//! Global application helpers for Terminus.
+//! Provides zero-ceremony access to current authenticated user (`auth()`, `user()`),
+//! authorization checks (`can()`, `cannot()`), request inspection (`request()`),
+//! control flow (`abort()`, `abort_if()`, `abort_unless()`), and system utilities.
+
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::sync::{OnceLock, RwLock};
+use chrono::{DateTime, Utc};
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
+use crate::domain::User;
+pub use crate::session::{secure_random_bytes, secure_random_hex};
+use crate::session::{Session, SessionConfig, SessionStore};
+
+tokio::task_local! {
+    pub static TASK_USER: Option<User>;
+    pub static TASK_REQUEST: Option<RequestInfo>;
+    pub static TASK_SESSION: Option<Session>;
+    static REQUEST_CONTEXT: RefCell<RequestContext>;
+}
+
+struct RequestContext {
+    user: Option<User>,
+    request: Option<RequestInfo>,
+    session_cookie: Option<String>,
+    session: Option<Session>,
+    response_session: Option<Session>,
+    session_config: Option<SessionConfig>,
+    session_error: Option<String>,
+}
+
+pub(crate) async fn with_request_context<F>(request: RequestInfo, session_config: Option<SessionConfig>, future: F) -> (F::Output, Option<Session>, Option<String>)
+where
+    F: std::future::Future,
+{
+    let session_cookie = request.header("cookie").map(str::to_string);
+    let context = RequestContext {
+        user: None, request: Some(request), session_cookie, session: None, response_session: None,
+        session_config, session_error: None,
+    };
+    REQUEST_CONTEXT.scope(RefCell::new(context), async move {
+        let output = future.await;
+        let session = REQUEST_CONTEXT.with(|context| context.borrow().response_session.clone());
+        let error = REQUEST_CONTEXT.with(|context| context.borrow().session_error.clone());
+        (output, session, error)
+    }).await
+}
+
+pub(crate) fn has_request_context() -> bool {
+    REQUEST_CONTEXT.try_with(|_| ()).is_ok()
+}
+
+/// Returns the active application's store, or the process-local default outside
+/// an application scope. Authentication must use the same store as middleware.
+pub fn session_store() -> std::sync::Arc<SessionStore> {
+    REQUEST_CONTEXT.try_with(|context| context.borrow().session_config.as_ref().map(SessionConfig::store))
+        .ok().flatten().unwrap_or_else(SessionStore::global_arc)
+}
+
+/// Formats a response cookie using the active application's signing and HTTPS settings.
+pub fn session_cookie_header(session: &Session) -> String {
+    if let Some(config) = REQUEST_CONTEXT.try_with(|context| context.borrow().session_config.clone()).ok().flatten() {
+        return config.cookie_header(session);
+    }
+    if let Some(key) = config("app.key").or_else(|| env("APP_KEY")) {
+        return session.signed_cookie_header(key.as_bytes());
+    }
+    session.cookie_header()
+}
+
+/// Removes the root-scoped session cookie using the application's HTTPS setting.
+pub fn clear_session_cookie_header() -> String {
+    REQUEST_CONTEXT.try_with(|context| context.borrow().session_config.as_ref()
+        .map(SessionConfig::clear_cookie_header)).ok().flatten()
+        .unwrap_or_else(|| "terminus_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax".to_string())
+}
+
+pub(crate) fn explicit_session() -> Option<Session> {
+    let session = TASK_SESSION.try_with(|session| session.clone()).ok().flatten()?;
+    let _ = REQUEST_CONTEXT.try_with(|context| {
+        context.borrow_mut().response_session = Some(session.clone());
+    });
+    Some(session)
+}
+
+pub(crate) fn scoped_session() -> Option<Session> {
+    if let Some(session) = explicit_session() {
+        return Some(session);
+    }
+    REQUEST_CONTEXT.try_with(|context| {
+        let mut context = context.borrow_mut();
+        let session = if let Some(session) = &context.session { session.clone() } else {
+            let loaded = if let Some(config) = &context.session_config {
+                config.cookie_id(context.session_cookie.as_deref()).and_then(|id| {
+                    id.map(|id| config.store.load(&id)).transpose().map(|session| session.flatten())
+                })
+            } else { Ok(Some(crate::session::resolve_session_cookie(context.session_cookie.as_deref()))) };
+            match loaded {
+                Ok(session) => session.unwrap_or_default(),
+                Err(error) => {
+                    context.session_error = Some(error);
+                    let session = Session::new();
+                    session.invalidate();
+                    session
+                }
+            }
+        };
+        context.session = Some(session.clone());
+        context.response_session = Some(session.clone());
+        session
+    }).ok()
+}
+
+thread_local! {
+    static THREAD_USER: RefCell<Option<User>> = const { RefCell::new(None) };
+    static THREAD_REQUEST: RefCell<Option<RequestInfo>> = const { RefCell::new(None) };
+    static THREAD_SESSION: RefCell<Option<Session>> = const { RefCell::new(None) };
+}
+
+static CONFIG_STORE: OnceLock<RwLock<HashMap<String, String>>> = OnceLock::new();
+fn config_store() -> &'static RwLock<HashMap<String, String>> {
+    CONFIG_STORE.get_or_init(|| RwLock::new(HashMap::new()))
+}
+
+/// Request metadata envelope providing direct inspection of HTTP request parameters.
+#[derive(Debug, Clone, Default)]
+pub struct RequestInfo {
+    pub method: String,
+    pub path: String,
+    pub query: HashMap<String, String>,
+    pub headers: HashMap<String, String>,
+    pub ip: String,
+    pub body_json: Option<serde_json::Value>,
+}
+
+impl RequestInfo {
+    pub fn new(method: impl Into<String>, path: impl Into<String>) -> Self {
+        Self {
+            method: method.into(),
+            path: path.into(),
+            query: HashMap::new(),
+            headers: HashMap::new(),
+            ip: "127.0.0.1".to_string(),
+            body_json: None,
+        }
+    }
+
+    pub fn from_headers(method: &str, path: &str, headers: &axum::http::HeaderMap) -> Self {
+        let mut req = Self::new(method, path);
+        for (k, v) in headers {
+            if let Ok(val) = v.to_str() {
+                req.headers.insert(k.as_str().to_lowercase(), val.to_string());
+            }
+        }
+        if let Some(ip) = req.header("x-forwarded-for").or_else(|| req.header("x-real-ip")) {
+            req.ip = ip.to_string();
+        }
+        req
+    }
+
+    pub fn with_query(mut self, key: impl Into<String>, val: impl Into<String>) -> Self {
+        self.query.insert(key.into(), val.into());
+        self
+    }
+
+    pub fn with_header(mut self, key: impl Into<String>, val: impl Into<String>) -> Self {
+        self.headers.insert(key.into().to_lowercase(), val.into());
+        self
+    }
+
+    pub fn with_ip(mut self, ip: impl Into<String>) -> Self {
+        self.ip = ip.into();
+        self
+    }
+
+    pub fn input(&self, key: &str) -> Option<&str> {
+        self.query.get(key)
+            .or_else(|| self.query.get(&crate::resource::to_camel_case(key)))
+            .or_else(|| self.query.get(&crate::resource::to_snake_case(key)))
+            .map(|s| s.as_str())
+    }
+
+    pub fn has(&self, key: &str) -> bool {
+        self.input(key).is_some()
+    }
+
+    pub fn header(&self, key: &str) -> Option<&str> {
+        self.headers.get(&key.to_lowercase()).map(|s| s.as_str())
+    }
+
+    pub fn is_json(&self) -> bool {
+        self.header("content-type").map(|c| c.contains("application/json")).unwrap_or(false)
+    }
+
+    pub fn wants_json(&self) -> bool {
+        self.header("accept").map(|a| a.contains("application/json")).unwrap_or(false)
+    }
+
+    pub fn is_ajax(&self) -> bool {
+        self.header("x-requested-with").map(|h| h.eq_ignore_ascii_case("xmlhttprequest")).unwrap_or(false)
+    }
+}
+
+/// Fluent accessor for the current HTTP request.
+#[derive(Debug, Clone, Default)]
+pub struct RequestAccessor;
+
+impl RequestAccessor {
+    pub fn info(&self) -> Option<RequestInfo> {
+        request_info()
+    }
+
+    pub fn input(&self, key: &str) -> Option<String> {
+        self.info().and_then(|r| r.input(key).map(|s| s.to_string()))
+    }
+
+    pub fn has(&self, key: &str) -> bool {
+        self.info().map(|r| r.has(key)).unwrap_or(false)
+    }
+
+    pub fn path(&self) -> String {
+        self.info().map(|r| r.path).unwrap_or_default()
+    }
+
+    pub fn method(&self) -> String {
+        self.info().map(|r| r.method).unwrap_or_else(|| "GET".to_string())
+    }
+
+    pub fn ip(&self) -> String {
+        self.info().map(|r| r.ip).unwrap_or_else(|| "127.0.0.1".to_string())
+    }
+
+    pub fn header(&self, key: &str) -> Option<String> {
+        self.info().and_then(|r| r.header(key).map(|s| s.to_string()))
+    }
+
+    pub fn is_json(&self) -> bool {
+        self.info().map(|r| r.is_json()).unwrap_or(false)
+    }
+
+    pub fn wants_json(&self) -> bool {
+        self.info().map(|r| r.wants_json()).unwrap_or(false)
+    }
+
+    pub fn is_ajax(&self) -> bool {
+        self.info().map(|r| r.is_ajax()).unwrap_or(false)
+    }
+}
+
+/// Global helper returning the active request accessor.
+pub fn request() -> RequestAccessor {
+    RequestAccessor
+}
+
+/// Returns the currently active `RequestInfo` across task or thread scope.
+pub fn request_info() -> Option<RequestInfo> {
+    if let Ok(request) = TASK_REQUEST.try_with(|request| request.clone()) {
+        return request;
+    }
+    if let Ok(request) = REQUEST_CONTEXT.try_with(|context| context.borrow().request.clone()) {
+        return request;
+    }
+    THREAD_REQUEST.with(|c| c.borrow().clone())
+}
+
+/// Sets the current HTTP request info for the active request or thread.
+pub fn set_current_request(req: Option<RequestInfo>) {
+    if REQUEST_CONTEXT.try_with(|context| context.borrow_mut().request = req.clone()).is_err() {
+        THREAD_REQUEST.with(|c| *c.borrow_mut() = req);
+    }
+}
+
+/// Runs a closure with the specified `RequestInfo` bound to the active scope.
+pub fn with_request<F, R>(req: RequestInfo, f: F) -> R
+where
+    F: FnOnce() -> R,
+{
+    let prev = REQUEST_CONTEXT.try_with(|context| context.borrow().request.clone())
+        .unwrap_or_else(|_| THREAD_REQUEST.with(|context| context.borrow().clone()));
+    set_current_request(Some(req));
+    let result = f();
+    set_current_request(prev);
+    result
+}
+
+/// Returns the currently authenticated `User` across task or thread scope.
+pub fn current_user() -> Option<User> {
+    if let Ok(user) = TASK_USER.try_with(|user| user.clone()) {
+        return user;
+    }
+    if let Ok(user) = REQUEST_CONTEXT.try_with(|context| context.borrow().user.clone()) {
+        return user;
+    }
+    THREAD_USER.with(|c| c.borrow().clone())
+}
+
+/// Global helper returning the currently authenticated `User`.
+pub fn auth() -> Option<User> {
+    current_user()
+}
+
+/// Global helper returning the currently authenticated `User`.
+pub fn user() -> Option<User> {
+    current_user()
+}
+
+/// Returns the ID of the currently authenticated `User`, or `None`.
+pub fn user_id() -> Option<String> {
+    current_user().map(|u| u.id)
+}
+
+/// Sets the authenticated user for the active request or thread.
+pub fn set_current_user(user: Option<User>) {
+    if REQUEST_CONTEXT.try_with(|context| context.borrow_mut().user = user.clone()).is_err() {
+        THREAD_USER.with(|c| *c.borrow_mut() = user);
+    }
+}
+
+/// Runs a closure with the specified `User` bound to the active scope.
+pub fn with_user<F, R>(user: User, f: F) -> R
+where
+    F: FnOnce() -> R,
+{
+    let prev = REQUEST_CONTEXT.try_with(|context| context.borrow().user.clone())
+        .unwrap_or_else(|_| THREAD_USER.with(|context| context.borrow().clone()));
+    set_current_user(Some(user));
+    let result = f();
+    set_current_user(prev);
+    result
+}
+
+/// Returns the currently active `Session` across task or thread scope.
+pub fn session() -> Session {
+    if let Some(session) = scoped_session() {
+        return session;
+    }
+    if let Some(s) = THREAD_SESSION.with(|c| c.borrow().clone()) {
+        return s;
+    }
+    let s = SessionStore::global().get_or_create(None);
+    set_current_session(Some(s.clone()));
+    s
+}
+
+/// Sets the current `Session` for the active request or thread.
+pub fn set_current_session(sess: Option<Session>) {
+    if REQUEST_CONTEXT.try_with(|context| {
+        let mut context = context.borrow_mut();
+        context.session = sess.clone();
+        context.response_session = sess.clone();
+    }).is_err() {
+        THREAD_SESSION.with(|c| *c.borrow_mut() = sess);
+    }
+}
+
+/// Authenticated User extractor for Axum handlers
+#[derive(Debug, Clone)]
+pub struct AuthUser(pub User);
+
+impl std::ops::Deref for AuthUser {
+    type Target = User;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+#[axum::async_trait]
+impl<S> axum::extract::FromRequestParts<S> for AuthUser
+where
+    S: Send + Sync,
+{
+    type Rejection = AbortError;
+
+    async fn from_request_parts(parts: &mut axum::http::request::Parts, _state: &S) -> std::result::Result<Self, Self::Rejection> {
+        if let Some(user) = parts.extensions.get::<User>() {
+            return Ok(AuthUser(user.clone()));
+        }
+
+        if let Some(user) = current_user() {
+            return Ok(AuthUser(user));
+        }
+
+        Err(AbortError::unauthorized("Authentication required"))
+    }
+}
+
+/// Optional Authenticated User extractor for Axum handlers
+#[derive(Debug, Clone)]
+pub struct MaybeAuthUser(pub Option<User>);
+
+#[axum::async_trait]
+impl<S> axum::extract::FromRequestParts<S> for MaybeAuthUser
+where
+    S: Send + Sync,
+{
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(parts: &mut axum::http::request::Parts, state: &S) -> std::result::Result<Self, Self::Rejection> {
+        match AuthUser::from_request_parts(parts, state).await {
+            Ok(AuthUser(u)) => Ok(MaybeAuthUser(Some(u))),
+            Err(_) => Ok(MaybeAuthUser(None)),
+        }
+    }
+}
+
+/// Flashes a one-time message into the active session for the next web request.
+pub fn flash(key: impl Into<String>, msg: impl Into<String>) {
+    session().flash(key, msg);
+}
+
+/// Flashes a success notification into the active session.
+pub fn flash_success(msg: impl Into<String>) {
+    session().flash_success(msg);
+}
+
+/// Flashes an error notification into the active session.
+pub fn flash_error(msg: impl Into<String>) {
+    session().flash_error(msg);
+}
+
+/// Returns the active session's secure CSRF token.
+pub fn csrf_token() -> String {
+    session().csrf_token()
+}
+
+/// Generates a hidden HTML input element containing the active session's CSRF token for web forms.
+pub fn csrf_field() -> String {
+    format!(r#"<input type="hidden" name="_csrf_token" value="{}">"#, csrf_token())
+}
+
+/// Primary authorization check: determines if the current authenticated user can perform an action.
+/// Returns `false` if unauthenticated or if the action is denied.
+pub fn can(permission: &str) -> bool {
+    current_user().map(|u| u.can(permission)).unwrap_or(false)
+}
+
+/// Inverse authorization check: determines if the current user cannot perform an action.
+pub fn cannot(permission: &str) -> bool {
+    !can(permission)
+}
+
+/// Checks if the current authenticated user has any of the listed permissions.
+pub fn can_any(permissions: &[&str]) -> bool {
+    permissions.iter().any(|&p| can(p))
+}
+
+/// Checks if the current authenticated user has all of the listed permissions.
+pub fn can_all(permissions: &[&str]) -> bool {
+    permissions.iter().all(|&p| can(p))
+}
+
+/// Checks if the current authenticated user is a Superadmin or Founder.
+pub fn is_superadmin() -> bool {
+    current_user().map(|u| u.is_superadmin()).unwrap_or(false)
+}
+
+/// Checks if the current authenticated user is an Admin, Superadmin, or Founder.
+pub fn is_admin() -> bool {
+    current_user().map(|u| matches!(
+        u.role,
+        crate::domain::Role::Founder | crate::domain::Role::Superadmin | crate::domain::Role::Admin
+    )).unwrap_or(false)
+}
+
+/// HTTP abort error with status code and error message.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AbortError {
+    pub status: u16,
+    pub message: String,
+}
+
+impl AbortError {
+    pub fn new(status: u16, message: impl Into<String>) -> Self {
+        Self {
+            status,
+            message: message.into(),
+        }
+    }
+
+    pub fn bad_request(message: impl Into<String>) -> Self {
+        Self::new(400, message)
+    }
+
+    pub fn unauthorized(message: impl Into<String>) -> Self {
+        Self::new(401, message)
+    }
+
+    pub fn forbidden(message: impl Into<String>) -> Self {
+        Self::new(403, message)
+    }
+
+    pub fn not_found(message: impl Into<String>) -> Self {
+        Self::new(404, message)
+    }
+
+    pub fn unprocessable(message: impl Into<String>) -> Self {
+        Self::new(422, message)
+    }
+
+    pub fn server_error(message: impl Into<String>) -> Self {
+        Self::new(500, message)
+    }
+}
+
+impl std::fmt::Display for AbortError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "HTTP {} Error: {}", self.status, self.message)
+    }
+}
+
+impl std::error::Error for AbortError {}
+
+impl From<String> for AbortError {
+    fn from(msg: String) -> Self {
+        Self::new(500, msg)
+    }
+}
+
+impl From<&str> for AbortError {
+    fn from(msg: &str) -> Self {
+        Self::new(500, msg)
+    }
+}
+
+impl From<rusqlite::Error> for AbortError {
+    fn from(err: rusqlite::Error) -> Self {
+        Self::new(500, err.to_string())
+    }
+}
+
+impl IntoResponse for AbortError {
+    fn into_response(self) -> Response {
+        let status = StatusCode::from_u16(self.status)
+            .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+
+        let wants_json = request_info()
+            .map(|r| r.wants_json() || r.is_json())
+            .unwrap_or(false);
+
+        if wants_json {
+            let body = serde_json::json!({
+                "error": true,
+                "status": self.status,
+                "message": self.message,
+            })
+            .to_string();
+            (
+                status,
+                [("Content-Type", "application/json; charset=utf-8")],
+                body,
+            )
+                .into_response()
+        } else {
+            let html = format!(
+                r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{code} - {msg}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-zinc-950 text-zinc-100 flex items-center justify-center min-h-screen p-4 font-sans antialiased">
+  <div class="text-center p-8 max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl">
+    <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-rose-500/10 text-rose-500 mb-6 font-mono font-bold text-2xl">
+      {code}
+    </div>
+    <h1 class="text-2xl font-bold text-white mb-2">{msg}</h1>
+    <p class="text-sm text-zinc-400 mb-6">The requested operation could not be completed with status code {code}.</p>
+    <a href="/" class="inline-flex items-center justify-center px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold uppercase tracking-wider transition-colors shadow-lg shadow-indigo-600/20">
+      Return to Home
+    </a>
+  </div>
+</body>
+</html>"#,
+                code = self.status,
+                msg = self.message
+            );
+            (status, axum::response::Html(html)).into_response()
+        }
+    }
+}
+
+/// Aborts execution with an HTTP status code and message.
+pub fn abort(status_code: u16, message: impl Into<String>) -> Result<()> {
+    Err(AbortError {
+        status: status_code,
+        message: message.into(),
+    })
+}
+
+/// Aborts execution if the condition is true.
+pub fn abort_if(condition: bool, status_code: u16, message: impl Into<String>) -> Result<()> {
+    if condition {
+        abort(status_code, message)
+    } else {
+        Ok(())
+    }
+}
+
+/// Aborts execution unless the condition is true.
+pub fn abort_unless(condition: bool, status_code: u16, message: impl Into<String>) -> Result<()> {
+    if !condition {
+        abort(status_code, message)
+    } else {
+        Ok(())
+    }
+}
+
+/// Aborts with HTTP 403 Forbidden.
+pub fn abort_403(message: impl Into<String>) -> Result<()> {
+    abort(403, message)
+}
+
+/// Aborts with HTTP 404 Not Found.
+pub fn abort_404(message: impl Into<String>) -> Result<()> {
+    abort(404, message)
+}
+
+/// Returns current UTC DateTime.
+pub fn now() -> DateTime<Utc> {
+    Utc::now()
+}
+
+/// Returns today's date formatted as YYYY-MM-DD.
+pub fn today() -> String {
+    Utc::now().format("%Y-%m-%d").to_string()
+}
+
+/// Returns current Unix timestamp in seconds.
+pub fn timestamp() -> i64 {
+    Utc::now().timestamp()
+}
+
+/// Reads configuration value from in-memory store or environment variable `TERMINUS_<KEY>` / `<KEY>`.
+pub fn config(key: &str) -> Option<String> {
+    if let Ok(store) = config_store().read() {
+        if let Some(val) = store.get(key) {
+            return Some(val.clone());
+        }
+    }
+    let env_key = format!("TERMINUS_{}", key.to_uppercase().replace('.', "_"));
+    std::env::var(&env_key).ok().or_else(|| std::env::var(key.to_uppercase().replace('.', "_")).ok())
+}
+
+/// Sets an in-memory configuration value.
+pub fn config_set(key: impl Into<String>, val: impl Into<String>) {
+    if let Ok(mut store) = config_store().write() {
+        store.insert(key.into(), val.into());
+    }
+}
+
+/// Reads an environment variable.
+pub fn env(key: &str) -> Option<String> {
+    std::env::var(key).ok()
+}
+
+
+
+#[macro_export]
+macro_rules! abort_if {
+    ($cond:expr, $code:expr, $msg:expr) => {
+        if $cond {
+            return Err($crate::helpers::AbortError {
+                status: $code,
+                message: $msg.into(),
+            });
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! abort_unless {
+    ($cond:expr, $code:expr, $msg:expr) => {
+        if !$cond {
+            return Err($crate::helpers::AbortError {
+                status: $code,
+                message: $msg.into(),
+            });
+        }
+    };
+}
+
+/// Fluent redirect response supporting chained flash messages (`redirect("/posts").with("success", "Saved!")`).
+#[derive(Debug, Clone)]
+pub struct RedirectResponse {
+    pub url: String,
+    pub status: StatusCode,
+    pub flash: Option<(String, String)>,
+}
+
+impl RedirectResponse {
+    pub fn to(url: impl Into<String>) -> Self {
+        Self {
+            url: url.into(),
+            status: StatusCode::SEE_OTHER,
+            flash: None,
+        }
+    }
+
+    /// Chains a one-time flash notification to be rendered on the redirected page.
+    pub fn with(mut self, key: impl Into<String>, msg: impl Into<String>) -> Self {
+        self.flash = Some((key.into(), msg.into()));
+        self
+    }
+
+    /// Convenience helper to chain a success notification.
+    pub fn with_success(self, msg: impl Into<String>) -> Self {
+        self.with("success", msg)
+    }
+
+    /// Convenience helper to chain an error notification.
+    pub fn with_error(self, msg: impl Into<String>) -> Self {
+        self.with("error", msg)
+    }
+
+    /// Convenience helper to chain a warning notification.
+    pub fn with_warning(self, msg: impl Into<String>) -> Self {
+        self.with("warning", msg)
+    }
+
+    /// Convenience helper to chain an informational notification.
+    pub fn with_info(self, msg: impl Into<String>) -> Self {
+        self.with("info", msg)
+    }
+}
+
+impl IntoResponse for RedirectResponse {
+    fn into_response(self) -> Response {
+        let session = session();
+        if let Some((k, v)) = self.flash {
+            session.flash(k, v);
+        }
+        let mut headers = axum::http::HeaderMap::new();
+        if let Ok(val) = axum::http::HeaderValue::from_str(&self.url) {
+            headers.insert(axum::http::header::LOCATION, val);
+        }
+        if let Ok(val) = axum::http::HeaderValue::from_str(&session_cookie_header(&session)) {
+            headers.insert(axum::http::header::SET_COOKIE, val);
+        }
+        (self.status, headers, "").into_response()
+    }
+}
+
+impl From<RedirectResponse> for axum::response::Redirect {
+    fn from(r: RedirectResponse) -> Self {
+        axum::response::Redirect::to(&r.url)
+    }
+}
+
+pub type Redirect = RedirectResponse;
+
+/// Fluent redirect helper returning an HTTP 303 Redirect response with optional flash chaining.
+pub fn redirect(to_url: impl AsRef<str>) -> RedirectResponse {
+    RedirectResponse::to(to_url.as_ref())
+}
+
+/// Standard Terminus Result type for controller handlers returning AbortError on failure by default
+pub type Result<T, E = AbortError> = std::result::Result<T, E>;
+
