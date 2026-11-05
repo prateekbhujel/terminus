@@ -1,6 +1,6 @@
 [package]
 name = "terminus-rs"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2021"
 authors = ["Pratik <prateekbhujelpb@gmail.com>"]
 description = "Terminus — High-performance, batteries-included web and API application framework for Rust and Axum."

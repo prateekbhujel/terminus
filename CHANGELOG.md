@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.0.2 - 2026-11-05
+
+### Documentation
+
+- README now documents all supported database backends (SQLite, PostgreSQL, MySQL/MariaDB, Redis, MongoDB), `DATABASE_URL` selection, backend-agnostic repositories, and session/queue configuration per backend. No code changes.
+
 ## 0.0.1 - 2026-11-05
 
 Initial public release.
