@@ -2,11 +2,11 @@
 
 **The agent-native, batteries-included application framework for Axum and Rust.**
 
-Web Admin • Embedded SQLite Persistence • HMAC Sessions • Compile-Time Validation • Deterministic Machine Introspection
+Web Admin • SQLite/PostgreSQL/MySQL/Redis/MongoDB • HMAC Sessions • Compile-Time Validation • Deterministic Machine Introspection
 
 [![CI](https://github.com/prateekbhujel/terminus/actions/workflows/rust.yml/badge.svg)](https://github.com/prateekbhujel/terminus/actions/workflows/rust.yml)
 [![Version: 0.0.1](https://img.shields.io/badge/crates.io-v0.0.1-emerald.svg)](https://crates.io/crates/terminus-rs)
-[![Docs](https://img.shields.io/badge/docs.rs-terminus--framework-blue.svg)](https://docs.rs/terminus-rs)
+[![Docs](https://img.shields.io/badge/docs.rs-terminus--rs-blue.svg)](https://docs.rs/terminus-rs)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ---
@@ -16,7 +16,7 @@ Web Admin • Embedded SQLite Persistence • HMAC Sessions • Compile-Time Val
 [Axum](https://github.com/tokio-rs/axum) is a world-class, high-performance web router. But it is intentionally minimal. For production web services, developers repeatedly re-implement the same foundational layers from scratch:
 
 - An administrative dashboard and CRUD interfaces
-- SQLite database connection management and batch migrations
+- Database connection management and batch migrations (SQLite, PostgreSQL, MySQL/MariaDB, plus Redis and MongoDB)
 - Request validation with structured JSON error responses
 - Signed session cookies, CSRF protection, and flash message bags
 - **Deterministic machine introspection**, so autonomous AI coding agents can inspect models, routes, and database tables without hallucination
@@ -93,8 +93,11 @@ use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let db = Database::open("terminus.db")?;
-    let user_repo = Arc::new(SqliteUserRepository::new(db.connection_arc())?);
+    // Any backend via DATABASE_URL: a SQLite path (default), postgres://...,
+    // or mysql://... (MariaDB included). The CLI reads the same variable.
+    let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| "terminus.db".to_string());
+    let db = Database::connect(&database_url)?;
+    let user_repo = Arc::new(DatabaseUserRepository::new(db.clone())?);
     let identity_repo: Arc<dyn UserRepository> = user_repo.clone();
     let credentials = user_repo.clone();
 
@@ -107,7 +110,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .authenticate_with(move |email, password| {
             credentials.verify_credentials(email, password)
         })
-        .resource(AuditLogResource::new(Arc::new(SqliteAuditRepository::new(db.connection_arc())?)));
+        .resource(AuditLogResource::new(Arc::new(DatabaseAuditRepository::new(db.clone())?)));
 
     App::new()
         .name("My Application")
@@ -225,26 +228,36 @@ HTTP 422 JSON error response:
 
 ---
 
-## Embedded SQLite Persistence & Batch Migrations
+## Database Persistence & Migrations (SQLite, PostgreSQL, MySQL)
 
-Terminus includes a zero-configuration SQLite persistence layer backed by `rusqlite`:
+SQLite is the zero-configuration default, not the only option. One `Database::connect` (and the `DATABASE_URL` environment variable for the CLI and scaffolded apps) selects the backend; the ORM, migrations, sessions, queue, users, tokens, audit logs, and orders run the same way on each:
+
+| Backend | URL | Use it for |
+|---|---|---|
+| SQLite | `terminus.db` (any file path) | Default; embedded single-file apps |
+| PostgreSQL | `postgres://user:pass@host:5432/app` | Server deployments |
+| MySQL / MariaDB | `mysql://user:pass@host:3306/app` (`mariadb://` works too) | Server deployments |
+| Redis | `redis://host:6379` | Cache driver and session store |
+| MongoDB | `mongodb://host:27017` | JSON documents via `MongoStore` (not the SQL ORM) |
 
 ```rust
 use terminus::prelude::*;
 
-let db = Database::open("app.db")?;
+let db = Database::connect("postgres://terminus:secret@localhost:5432/myapp")?;
+// ...or Database::open("terminus.db") for embedded SQLite.
 
-// 1. Raw DDL execution
-db.execute("CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, title TEXT)")?;
+// Raw DDL works on every backend:
+db.execute("CREATE TABLE IF NOT EXISTS items (id TEXT PRIMARY KEY, title TEXT)")?;
 
-// 2. Ergonomic parameterized query execution
-let affected = db.with_conn(|conn| {
-    conn.execute(
-        "INSERT INTO items (title) VALUES (?1)",
-        rusqlite::params!["Hardware Scanner Node"],
-    )
-})?;
+// Portable parameterized queries (`?` on SQLite/MySQL, `$1` on PostgreSQL):
+let placeholder = db.kind().placeholder(1);
+db.execute_params(
+    &format!("INSERT INTO items (id, title) VALUES ({placeholder}, {})", db.kind().placeholder(2)),
+    &["item-1".to_string(), "Hardware Scanner Node".to_string()],
+)?;
 ```
+
+Prefer the generic repositories (`DatabaseUserRepository`, `DatabaseTokenStore`, `DatabaseAuditRepository`, `DatabaseOrderRepository`) so the same code runs on any backend; the `Sqlite*Repository` types remain for existing SQLite apps. Build with `--no-default-features` for a SQLite-only binary.
 
 ### Batch Migrations & Rollback
 
@@ -476,7 +489,7 @@ terminus <command> [options]
 | `agent:guide [--json]` | Display AI agent conventions and architecture directives |
 | `make:resource <Name>` | Scaffold an administrative resource |
 | `make:module <Name>` | Scaffold a domain module |
-| `make:repo <Name>` | Scaffold a SQLite repository implementation |
+| `make:repo <Name>` | Scaffold a repository implementation |
 | `make:migration <Name>` | Generate a timestamped SQL migration file |
 | `migrate` | Run pending database migrations |
 | `migrate:status` | Show execution status of each migration batch |
@@ -510,8 +523,8 @@ The suite covers HTTP request isolation, session and flash cookie roundtrips, SQ
 Terminus is a batteries-included Axum stack (initial public release):
 
 - **Authentication**: Admin sign-in requires an application-supplied credential verifier (`AdminPanel::authenticate_with`); there are no default or demonstration credentials. Passwords use Argon2id (`Hash::make`), legacy PBKDF2 hashes still verify, and bearer tokens resolve to real, active repository users.
-- **Sessions**: Configure `App::sessions(SessionConfig::sqlite(path, key))` for signed, expiring sessions that persist across restarts, with durable revocation on logout. Keys must be at least 32 bytes; keep `Secure` cookies enabled behind HTTPS.
-- **Queue**: `SqliteJobQueue` workers atomically reserve jobs with expiring leases. Multiple workers may share one database, crashed workers' jobs are reclaimed, and delivery is at-least-once, so handlers must be idempotent.
+- **Sessions**: Configure `App::sessions(SessionConfig::database(url, key))` (any SQL backend) or `SessionConfig::redis(url, key)` for signed, expiring sessions that persist across restarts, with durable revocation on logout. Keys must be at least 32 bytes; keep `Secure` cookies enabled behind HTTPS.
+- **Queue**: `SqliteJobQueue::connect(url)` workers on SQLite, PostgreSQL, or MySQL atomically reserve jobs with expiring leases. Multiple workers may share one database, crashed workers' jobs are reclaimed, and delivery is at-least-once, so handlers must be idempotent.
 - **Migrations**: Migration SQL and bookkeeping commit in one transaction; rollback requires explicit `-- [DOWN]` SQL and never erases history silently. CLI failures exit nonzero.
 
 Versioning follows Semantic Versioning for the public API in `terminus::prelude` and documented modules. Report defects with a minimal reproduction in GitHub Issues, and security reports privately per [SECURITY.md](SECURITY.md).
