@@ -117,7 +117,7 @@ impl OAuthClient {
         let raw: serde_json::Value = ureq::get(&self.userinfo_url)
             .set("Authorization", &format!("Bearer {access_token}"))
             .set("Accept", "application/json")
-            .set("User-Agent", "terminus-framework")
+            .set("User-Agent", "terminus-rs")
             .call()
             .map_err(|e| e.to_string())?
             .into_json()

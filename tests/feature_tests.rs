@@ -1757,7 +1757,7 @@ fn test_project_scaffolding_presets() {
 
     let cargo1 = std::fs::read_to_string(app1_dir.join("Cargo.toml")).unwrap();
     assert!(cargo1.contains("name = \"app1_fullstack\""));
-    assert!(cargo1.contains("terminus-framework"));
+    assert!(cargo1.contains("terminus-rs"));
 
     let main1 = std::fs::read_to_string(app1_dir.join("src/main.rs")).unwrap();
     assert!(main1.contains("Database::connect(&database_url)"));
@@ -1915,7 +1915,7 @@ fn test_agent_schema_introspection_and_app_spec() {
 
     // Serialization for AI agents
     let json = spec.to_json_pretty();
-    assert!(json.contains("\"framework\": \"terminus-framework\""));
+    assert!(json.contains("\"framework\": \"terminus-rs\""));
     assert!(json.contains("\"app_name\": \"Warehouse Master\""));
     assert!(json.contains("\"sku\""));
 
@@ -1977,7 +1977,7 @@ async fn test_headless_test_client_and_http_assertions() {
     // 2. GET /api/_spec (machine introspection)
     let spec_res = client.get("/api/_spec").await;
     spec_res.assert_ok();
-    assert_eq!(spec_res.json()["framework"], "terminus-framework");
+    assert_eq!(spec_res.json()["framework"], "terminus-rs");
     assert_eq!(spec_res.json()["app_name"], "Test Commerce");
 
     // 3. POST /api/items (validation failure -> 422)

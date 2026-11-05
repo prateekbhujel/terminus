@@ -31,7 +31,7 @@ impl AppSpec {
     /// Initialize a new application specification
     pub fn new(app_name: impl Into<String>) -> Self {
         Self {
-            framework: "terminus-framework".to_string(),
+            framework: "terminus-rs".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
             app_name: app_name.into(),
             host: "127.0.0.1".to_string(),

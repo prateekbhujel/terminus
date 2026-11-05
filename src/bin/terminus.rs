@@ -2311,7 +2311,7 @@ fn print_agent_context() {
         Err(_) => ("unknown".to_string(), 0, CORE_MIGRATIONS.len()),
     };
     let context = serde_json::json!({
-        "framework": "terminus-framework",
+        "framework": "terminus-rs",
         "version": env!("CARGO_PKG_VERSION"),
         "backend": backend,
         "migrations_applied": applied,
@@ -2333,7 +2333,7 @@ fn print_agent_context() {
 fn print_agent_guide(is_json: bool) {
     if is_json {
         let guide = serde_json::json!({
-            "framework": "terminus-framework",
+            "framework": "terminus-rs",
             "version": env!("CARGO_PKG_VERSION"),
             "philosophy": "First-principles fullstack application framework for Rust designed for autonomous coding agents.",
             "conventions": {

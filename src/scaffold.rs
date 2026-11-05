@@ -295,7 +295,7 @@ version = "0.0.1"
 edition = "2021"
 
 [dependencies]
-terminus-framework = "{framework_version}"
+{framework_name} = "{framework_version}"
 tokio = {{ version = "1", features = ["full"] }}
 serde = {{ version = "1.0", features = ["derive"] }}
 serde_json = "1.0"
@@ -303,6 +303,7 @@ axum = {{ version = "0.7", features = ["macros"] }}
 chrono = "0.4"
 "#,
         name = config.name,
+        framework_name = env!("CARGO_PKG_NAME"),
         framework_version = env!("CARGO_PKG_VERSION")
     )
 }

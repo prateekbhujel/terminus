@@ -5,8 +5,8 @@
 Web Admin • Embedded SQLite Persistence • HMAC Sessions • Compile-Time Validation • Deterministic Machine Introspection
 
 [![CI](https://github.com/prateekbhujel/terminus/actions/workflows/rust.yml/badge.svg)](https://github.com/prateekbhujel/terminus/actions/workflows/rust.yml)
-[![Version: 0.0.1](https://img.shields.io/badge/crates.io-v0.0.1-emerald.svg)](https://crates.io/crates/terminus-framework)
-[![Docs](https://img.shields.io/badge/docs.rs-terminus--framework-blue.svg)](https://docs.rs/terminus-framework)
+[![Version: 0.0.1](https://img.shields.io/badge/crates.io-v0.0.1-emerald.svg)](https://crates.io/crates/terminus-rs)
+[![Docs](https://img.shields.io/badge/docs.rs-terminus--framework-blue.svg)](https://docs.rs/terminus-rs)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ---
@@ -43,7 +43,7 @@ irm https://raw.githubusercontent.com/prateekbhujel/terminus/main/install.ps1 | 
 
 **Or via Cargo:**
 ```bash
-cargo install terminus-framework
+cargo install terminus-rs
 ```
 
 Scaffold an application from anywhere:
@@ -79,7 +79,7 @@ Add Terminus to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-terminus-framework = "0.0.1"
+terminus-rs = "0.0.1"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -135,7 +135,7 @@ Outputs a structured, zero-hallucination JSON specification of your entire appli
 
 ```json
 {
-  "framework": "terminus-framework",
+  "framework": "terminus-rs",
   "version": "0.0.1",
   "app_name": "Warehouse Master",
   "routes": [

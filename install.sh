@@ -36,12 +36,12 @@ if ! command -v cargo >/dev/null 2>&1; then
 fi
 
 # If inside repository directory, install from local path, otherwise install from crates.io
-if [ -f "Cargo.toml" ] && grep -q 'name = "terminus-framework"' Cargo.toml 2>/dev/null; then
+if [ -f "Cargo.toml" ] && grep -q 'name = "terminus-rs"' Cargo.toml 2>/dev/null; then
   echo "Installing from local repository directory..."
   cargo install --path . --force
 else
-  echo "Installing terminus-framework from crates.io..."
-  cargo install terminus-framework --force
+  echo "Installing terminus-rs from crates.io..."
+  cargo install terminus-rs --force
 fi
 
 CARGO_BIN="$HOME/.cargo/bin"

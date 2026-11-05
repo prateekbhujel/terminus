@@ -24,16 +24,16 @@ if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
 # If inside repository directory, install from local path, otherwise install from crates.io
 if (Test-Path "Cargo.toml") {
     $content = Get-Content "Cargo.toml" -Raw
-    if ($content -match 'name = "terminus-framework"') {
+    if ($content -match 'name = "terminus-rs"') {
         Write-Host "Installing from local repository directory..." -ForegroundColor Gray
         cargo install --path . --force
     } else {
-        Write-Host "Installing terminus-framework from crates.io..." -ForegroundColor Gray
-        cargo install terminus-framework --force
+        Write-Host "Installing terminus-rs from crates.io..." -ForegroundColor Gray
+        cargo install terminus-rs --force
     }
 } else {
-    Write-Host "Installing terminus-framework from crates.io..." -ForegroundColor Gray
-    cargo install terminus-framework --force
+    Write-Host "Installing terminus-rs from crates.io..." -ForegroundColor Gray
+    cargo install terminus-rs --force
 }
 
 $cargoBin = Join-Path $HOME ".cargo\bin"

@@ -34,7 +34,7 @@ impl Drop for TempProject {
 fn scaffold_uses_current_framework_version() {
     let manifest = generate_cargo_toml(&ProjectConfig::new("version_check"));
     assert!(manifest.contains(&format!(
-        "terminus-framework = \"{}\"",
+        "terminus-rs = \"{}\"",
         env!("CARGO_PKG_VERSION")
     )));
 }
@@ -69,7 +69,7 @@ fn scaffolded_presets_compile() {
     fs::write(
         project.0.join("Cargo.toml"),
         format!(
-            "[workspace]\nmembers = [{}]\nresolver = \"2\"\n\n[patch.crates-io]\nterminus-framework = {{ path = {} }}\n",
+            "[workspace]\nmembers = [{}]\nresolver = \"2\"\n\n[patch.crates-io]\nterminus-rs = {{ path = {} }}\n",
             members.join(", "),
             serde_json::to_string(&manifest_dir).unwrap()
         ),
