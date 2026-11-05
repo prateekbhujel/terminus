@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.0.3 - 2026-11-05
+
+### Fixed
+
+- README version badge renders as an image again (a missing `!` in the badge markdown turned it into a plain text link).
+
 ## 0.0.2 - 2026-11-05
 
 ### Documentation

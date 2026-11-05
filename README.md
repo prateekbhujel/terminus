@@ -5,7 +5,7 @@
 Web Admin • SQLite/PostgreSQL/MySQL/Redis/MongoDB • HMAC Sessions • Compile-Time Validation • Deterministic Machine Introspection
 
 [![CI](https://github.com/prateekbhujel/terminus/actions/workflows/rust.yml/badge.svg)](https://github.com/prateekbhujel/terminus/actions/workflows/rust.yml)
-[Version: 0.0.2](https://img.shields.io/badge/crates.io-v0.0.2-emerald.svg)](https://crates.io/crates/terminus-rs)
+[![Version: 0.0.3](https://img.shields.io/badge/crates.io-v0.0.3-emerald.svg)](https://crates.io/crates/terminus-rs)
 [![Docs](https://img.shields.io/badge/docs.rs-terminus--rs-blue.svg)](https://docs.rs/terminus-rs)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -79,7 +79,7 @@ Add Terminus to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-terminus-rs = "0.0.2"
+terminus-rs = "0.0.3"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -139,7 +139,7 @@ Outputs a structured, zero-hallucination JSON specification of your entire appli
 ```json
 {
   "framework": "terminus-rs",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "app_name": "Warehouse Master",
   "routes": [
     { "method": "GET", "path": "/api/items", "handler_name": "list_items", "auth_required": true }
@@ -417,7 +417,7 @@ Run the benchmark suite locally:
 cargo run --example benchmark --release
 ```
 
-Example v0.0.2 release-mode run on Apple Silicon, with 50,000 in-memory HTTP requests and 20,000 SQLite queries:
+Example v0.0.3 release-mode run on Apple Silicon, with 50,000 in-memory HTTP requests and 20,000 SQLite queries:
 
 | Scenario | Throughput | p50 Latency | p95 Latency | p99 Latency |
 |---|---|---|---|---|
