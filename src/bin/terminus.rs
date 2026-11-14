@@ -1,3 +1,7 @@
+use std::env;
+use std::fs;
+use std::path::Path;
+use std::sync::{Arc, Mutex};
 use terminus::cache::CacheDriver;
 use terminus::client::SdkGenerator;
 use terminus::prompt;
@@ -6,10 +10,6 @@ use terminus::scaffold::{
     TargetPlatform,
 };
 use terminus::token::{SqliteTokenStore, TokenRepository};
-use std::env;
-use std::fs;
-use std::path::Path;
-use std::sync::{Arc, Mutex};
 
 fn main() {
     let mut raw_args: Vec<String> = env::args().collect();
@@ -37,7 +37,10 @@ fn main() {
         }
         "make:slice" | "make:domain" | "slice:create" => {
             let name = args.get(2).map(|s| s.as_str());
-            let fields_arg = args.iter().find(|a| a.starts_with("--fields=")).map(|a| a.trim_start_matches("--fields="));
+            let fields_arg = args
+                .iter()
+                .find(|a| a.starts_with("--fields="))
+                .map(|a| a.trim_start_matches("--fields="));
             make_slice(name, fields_arg);
         }
         "agent:context" => print_agent_context(),
@@ -47,19 +50,44 @@ fn main() {
         }
         "new" | "init" | "create" => {
             let name_arg = args.get(2).map(|s| s.as_str());
-            let preset_arg = args.iter().find(|a| a.starts_with("--preset=")).map(|a| a.trim_start_matches("--preset="));
-            let targets_arg = args.iter().find(|a| a.starts_with("--targets=") || a.starts_with("--target=")).map(|a| {
-                if let Some(t) = a.strip_prefix("--targets=") {
-                    t
-                } else {
-                    a.trim_start_matches("--target=")
-                }
-            });
-            let frontend_arg = args.iter().find(|a| a.starts_with("--frontend=")).map(|a| a.trim_start_matches("--frontend="));
-            let db_arg = args.iter().find(|a| a.starts_with("--db=")).map(|a| a.trim_start_matches("--db="));
-            let port_arg = args.iter().find(|a| a.starts_with("--port=")).map(|a| a.trim_start_matches("--port="));
-            let non_interactive = args.iter().any(|a| a == "--yes" || a == "-y" || a == "--non-interactive");
-            run_new_project(name_arg, preset_arg, targets_arg, frontend_arg, db_arg, port_arg, non_interactive);
+            let preset_arg = args
+                .iter()
+                .find(|a| a.starts_with("--preset="))
+                .map(|a| a.trim_start_matches("--preset="));
+            let targets_arg = args
+                .iter()
+                .find(|a| a.starts_with("--targets=") || a.starts_with("--target="))
+                .map(|a| {
+                    if let Some(t) = a.strip_prefix("--targets=") {
+                        t
+                    } else {
+                        a.trim_start_matches("--target=")
+                    }
+                });
+            let frontend_arg = args
+                .iter()
+                .find(|a| a.starts_with("--frontend="))
+                .map(|a| a.trim_start_matches("--frontend="));
+            let db_arg = args
+                .iter()
+                .find(|a| a.starts_with("--db="))
+                .map(|a| a.trim_start_matches("--db="));
+            let port_arg = args
+                .iter()
+                .find(|a| a.starts_with("--port="))
+                .map(|a| a.trim_start_matches("--port="));
+            let non_interactive = args
+                .iter()
+                .any(|a| a == "--yes" || a == "-y" || a == "--non-interactive");
+            run_new_project(
+                name_arg,
+                preset_arg,
+                targets_arg,
+                frontend_arg,
+                db_arg,
+                port_arg,
+                non_interactive,
+            );
         }
         "make:resource" => {
             let name = args.get(2).map(|s| s.as_str());
@@ -77,8 +105,12 @@ fn main() {
         }
         "make:model" => {
             let name = args.get(2).map(|s| s.as_str());
-            let with_migration = args.iter().any(|a| a == "-m" || a == "-mc" || a == "-cm" || a == "--migration");
-            let with_controller = args.iter().any(|a| a == "-c" || a == "-mc" || a == "-cm" || a == "--controller");
+            let with_migration = args
+                .iter()
+                .any(|a| a == "-m" || a == "-mc" || a == "-cm" || a == "--migration");
+            let with_controller = args
+                .iter()
+                .any(|a| a == "-c" || a == "-mc" || a == "-cm" || a == "--controller");
             make_model(name, with_migration, with_controller);
         }
         "make:seeder" => {
@@ -106,7 +138,10 @@ fn main() {
         "migrate:status" => run_migration_status(),
         "migrate:rollback" => run_migration_rollback(),
         "tinker" => {
-            let exec_opt = args.iter().find(|a| a.starts_with("--execute=")).map(|a| a.trim_start_matches("--execute="));
+            let exec_opt = args
+                .iter()
+                .find(|a| a.starts_with("--execute="))
+                .map(|a| a.trim_start_matches("--execute="));
             run_tinker(exec_opt);
         }
         "schedule:run" => run_schedule(),
@@ -128,7 +163,10 @@ fn main() {
         "theme:preview" => preview_theme(),
         "mail:outbox" => view_mail_outbox(),
         "make:sdk" | "client:sdk" => {
-            let lang = args.iter().find(|a| a.starts_with("--lang=")).map(|a| a.trim_start_matches("--lang="));
+            let lang = args
+                .iter()
+                .find(|a| a.starts_with("--lang="))
+                .map(|a| a.trim_start_matches("--lang="));
             make_sdk(lang);
         }
         unknown => {
@@ -149,11 +187,14 @@ fn print_banner() {
 
 fn print_help() {
     print_banner();
-    println!("Usage:\n  terminus <command> [arguments]\n\n\x1b[1mAvailable Commands:\x1b[0m\n  \x1b[33mnew [name] [--preset=...] [--frontend=...]\x1b[0m Scaffold a new Terminus project (interactive wizard or flags)\n  \x1b[33mschema [--json] [--spec=...]\x1b[0m Read exported AppSpec contract and DATABASE_URL schema\n  \x1b[33mroute:list | routes\x1b[0m      List registered web routes, admin resources & API endpoints\n  \x1b[33mtinker [--execute=...]\x1b[0m   Interactive database REPL & command console\n  \x1b[33mmake:controller <Name> [-r]\x1b[0m Scaffold a Controller (or RESTful resource controller)\n  \x1b[33mmake:model <Name> [-mc]\x1b[0m  Scaffold a Model (with optional -m migration, -c controller)\n  \x1b[33mmake:seeder <Name>\x1b[0m       Scaffold a database Seeder class\n  \x1b[33mmake:slice <Name> [--fields=...]\x1b[0m Scaffold a full-stack vertical domain slice (DDD)\n  \x1b[33mmake:resource <Name>\x1b[0m     Scaffold a new Admin Resource with table & form\n  \x1b[33mmake:module <Name>\x1b[0m       Scaffold an Enterprise Modular (DDD) domain module\n  \x1b[33mmake:repo <Name>\x1b[0m         Scaffold a SQLite repository implementation\n  \x1b[33mmake:migration <Name>\x1b[0m    Generate a timestamped SQL migration file\n  \x1b[33mmigrate\x1b[0m                  Run pending database migrations\n  \x1b[33mmigrate:status\x1b[0m           Show execution status of each migration batch\n  \x1b[33mmigrate:rollback\x1b[0m         Rollback the latest migration batch\n  \x1b[33mdb:seed\x1b[0m                  Seed demo accounts and orders into database\n  \x1b[33mdb:tables\x1b[0m                Inspect SQLite database tables, schema, and row counts\n  \x1b[33mschedule:run\x1b[0m             Run due scheduled tasks and recurring cron jobs\n  \x1b[33mschedule:list\x1b[0m            List scheduled tasks and recurring frequencies\n  \x1b[33mcache:clear\x1b[0m              Flush application cache\n  \x1b[33mmake:token [Name]\x1b[0m        Generate an API Personal Access Token\n  \x1b[33mtoken:list\x1b[0m               List active Personal Access Tokens\n  \x1b[33mtoken:revoke [ID]\x1b[0m        Revoke a Personal Access Token\n  \x1b[33mmake:sdk [--lang=ts|openapi]\x1b[0m Export typed TypeScript client or OpenAPI 3.0.3 contract\n  \x1b[33mmake:job <Name>\x1b[0m          Scaffold a background Queue Job\n  \x1b[33mmake:mail <Name>\x1b[0m         Scaffold a Transactional Mail notification\n  \x1b[33mws:serve\x1b[0m                 Start standalone WebSocket broadcasting server\n  \x1b[33mqueue:work\x1b[0m               Start processing background queue jobs\n  \x1b[33mmail:outbox\x1b[0m              Inspect sent transactional emails\n  \x1b[33mtheme:preview\x1b[0m            Preview theme colors, palettes, and font families\n  \x1b[33magent:guide [--json]\x1b[0m     Display agent-native architecture specification\n  \x1b[33mversion\x1b[0m                  Show Terminus CLI version\n\n\x1b[1mExamples:\x1b[0m\n  terminus route:list\n  terminus tinker\n  terminus make:model Product -mc\n  terminus make:controller OrderController --resource\n  terminus make:seeder ProductSeeder\n  terminus migrate:status\n  terminus migrate:rollback\n  terminus schedule:run\n  terminus new my_project\n");
+    println!("Usage:\n  terminus <command> [arguments]\n\n\x1b[1mAvailable Commands:\x1b[0m\n  \x1b[33mnew [name] [--preset=...] [--frontend=...] [--db=...] [--port=...] [--yes]\x1b[0m Scaffold a new Terminus project (interactive wizard or flags)\n  \x1b[33mschema [--json] [--spec=...]\x1b[0m Read exported AppSpec contract and DATABASE_URL schema\n  \x1b[33mroute:list | routes\x1b[0m      List registered web routes, admin resources & API endpoints\n  \x1b[33mtinker [--execute=...]\x1b[0m   Interactive database REPL & command console\n  \x1b[33mmake:controller <Name> [-r]\x1b[0m Scaffold a Controller (or RESTful resource controller)\n  \x1b[33mmake:model <Name> [-mc]\x1b[0m  Scaffold a Model (with optional -m migration, -c controller)\n  \x1b[33mmake:seeder <Name>\x1b[0m       Scaffold a database Seeder class\n  \x1b[33mmake:slice <Name> [--fields=...]\x1b[0m Scaffold a full-stack vertical domain slice (DDD)\n  \x1b[33mmake:resource <Name>\x1b[0m     Scaffold a new Admin Resource with table & form\n  \x1b[33mmake:module <Name>\x1b[0m       Scaffold an Enterprise Modular (DDD) domain module\n  \x1b[33mmake:repo <Name>\x1b[0m         Scaffold a SQLite repository implementation\n  \x1b[33mmake:migration <Name>\x1b[0m    Generate a timestamped SQL migration file\n  \x1b[33mmigrate\x1b[0m                  Run pending database migrations\n  \x1b[33mmigrate:status\x1b[0m           Show execution status of each migration batch\n  \x1b[33mmigrate:rollback\x1b[0m         Rollback the latest migration batch\n  \x1b[33mdb:seed\x1b[0m                  Seed local development accounts (generated password) and sample orders\n  \x1b[33mdb:tables\x1b[0m                Inspect SQLite database tables, schema, and row counts\n  \x1b[33mschedule:run\x1b[0m             Run due scheduled tasks and recurring cron jobs\n  \x1b[33mschedule:list\x1b[0m            List scheduled tasks and recurring frequencies\n  \x1b[33mcache:clear\x1b[0m              Flush application cache\n  \x1b[33mmake:token [Name]\x1b[0m        Generate an API Personal Access Token\n  \x1b[33mtoken:list\x1b[0m               List active Personal Access Tokens\n  \x1b[33mtoken:revoke [ID]\x1b[0m        Revoke a Personal Access Token\n  \x1b[33mmake:sdk [--lang=ts|openapi]\x1b[0m Export typed TypeScript client or OpenAPI 3.0.3 contract\n  \x1b[33mmake:job <Name>\x1b[0m          Scaffold a background Queue Job\n  \x1b[33mmake:mail <Name>\x1b[0m         Scaffold a Transactional Mail notification\n  \x1b[33mws:serve\x1b[0m                 Start standalone WebSocket broadcasting server\n  \x1b[33mqueue:work\x1b[0m               Start processing background queue jobs\n  \x1b[33mmail:outbox\x1b[0m              Inspect sent transactional emails\n  \x1b[33mtheme:preview\x1b[0m            Preview theme colors, palettes, and font families\n  \x1b[33magent:guide [--json]\x1b[0m     Display agent-native architecture specification\n  \x1b[33mversion\x1b[0m                  Show Terminus CLI version\n\n\x1b[1mExamples:\x1b[0m\n  terminus route:list\n  terminus tinker\n  terminus make:model Product -mc\n  terminus make:controller OrderController --resource\n  terminus make:seeder ProductSeeder\n  terminus migrate:status\n  terminus migrate:rollback\n  terminus schedule:run\n  terminus new my_project\n");
 }
 
 fn print_version() {
-    println!("Terminus Framework CLI v{} (Rust edition 2021)", env!("CARGO_PKG_VERSION"));
+    println!(
+        "Terminus Framework CLI v{} (Rust edition 2021)",
+        env!("CARGO_PKG_VERSION")
+    );
 }
 
 fn make_resource(name_opt: Option<&str>) {
@@ -174,7 +215,8 @@ fn make_resource(name_opt: Option<&str>) {
     let slug = name.to_lowercase();
     let filename = format!("{}_resource.rs", slug);
 
-    let template = format!(r#"use terminus::prelude::*;
+    let template = format!(
+        r#"use terminus::prelude::*;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -261,7 +303,8 @@ impl Resource for {singular}Resource {{
         row.get("status") != Some("archived")
     }}
 }}
-"#);
+"#
+    );
 
     let target_dir = Path::new("src/resources");
     if target_dir.exists() {
@@ -279,7 +322,12 @@ impl Resource for {singular}Resource {{
 fn make_module(name_opt: Option<&str>, pattern_arg: Option<&str>) {
     let name_str = match name_opt {
         Some(n) if !n.is_empty() => n.to_string(),
-        _ => match prompt::text("Module name (e.g. User, Product, Billing, Order)", None, Some("User"), true) {
+        _ => match prompt::text(
+            "Module name (e.g. User, Product, Billing, Order)",
+            None,
+            Some("User"),
+            true,
+        ) {
             Ok(n) if !n.is_empty() => n,
             _ => {
                 eprintln!("\x1b[31mError:\x1b[0m Missing module name.\nUsage: terminus make:module <Name>\nExample: terminus make:module User");
@@ -292,13 +340,19 @@ fn make_module(name_opt: Option<&str>, pattern_arg: Option<&str>) {
 
     let (pattern_choice, components) = if let Some(p) = pattern_arg {
         match p {
-            "--simple" | "-s" | "simple" => (
-                "simple",
-                vec!["model", "repo", "resource"],
-            ),
+            "--simple" | "-s" | "simple" => ("simple", vec!["model", "repo", "resource"]),
             _ => (
                 "modular",
-                vec!["dto", "model", "repo", "provider", "controller", "request", "routes", "resource"],
+                vec![
+                    "dto",
+                    "model",
+                    "repo",
+                    "provider",
+                    "controller",
+                    "request",
+                    "routes",
+                    "resource",
+                ],
             ),
         }
     } else {
@@ -313,28 +367,85 @@ fn make_module(name_opt: Option<&str>, pattern_arg: Option<&str>) {
         ).unwrap_or("modular");
 
         let comp = match choice {
-            "modular" => vec!["dto", "model", "repo", "provider", "controller", "request", "routes", "resource"],
+            "modular" => vec![
+                "dto",
+                "model",
+                "repo",
+                "provider",
+                "controller",
+                "request",
+                "routes",
+                "resource",
+            ],
             "simple" => vec!["model", "repo", "resource"],
             "custom" => {
                 match prompt::multiselect(
                     &format!("Select components to scaffold for module '{singular}':"),
                     &[
-                        ("dto", "Data Transfer Objects (DTO) - Input/output contract structs"),
+                        (
+                            "dto",
+                            "Data Transfer Objects (DTO) - Input/output contract structs",
+                        ),
                         ("model", "Domain Model - Active Record model with schema"),
-                        ("repo", "Repository - Decoupled data access trait & SQLite store"),
-                        ("provider", "Service Provider - Core business logic & domain service"),
-                        ("controller", "HTTP Controller - Axum REST handlers & JSON responses"),
-                        ("request", "Form Request - Validation rules & payload sanitization"),
-                        ("routes", "Route Registrar - Axum Router module registration"),
-                        ("resource", "Admin Resource - Administrative UI table & form layout"),
+                        (
+                            "repo",
+                            "Repository - Decoupled data access trait & SQLite store",
+                        ),
+                        (
+                            "provider",
+                            "Service Provider - Core business logic & domain service",
+                        ),
+                        (
+                            "controller",
+                            "HTTP Controller - Axum REST handlers & JSON responses",
+                        ),
+                        (
+                            "request",
+                            "Form Request - Validation rules & payload sanitization",
+                        ),
+                        (
+                            "routes",
+                            "Route Registrar - Axum Router module registration",
+                        ),
+                        (
+                            "resource",
+                            "Admin Resource - Administrative UI table & form layout",
+                        ),
                     ],
-                    &["dto", "model", "repo", "provider", "controller", "request", "routes", "resource"],
+                    &[
+                        "dto",
+                        "model",
+                        "repo",
+                        "provider",
+                        "controller",
+                        "request",
+                        "routes",
+                        "resource",
+                    ],
                 ) {
                     Ok(c) => c,
-                    Err(_) => vec!["dto", "model", "repo", "provider", "controller", "request", "routes", "resource"],
+                    Err(_) => vec![
+                        "dto",
+                        "model",
+                        "repo",
+                        "provider",
+                        "controller",
+                        "request",
+                        "routes",
+                        "resource",
+                    ],
                 }
             }
-            _ => vec!["dto", "model", "repo", "provider", "controller", "request", "routes", "resource"],
+            _ => vec![
+                "dto",
+                "model",
+                "repo",
+                "provider",
+                "controller",
+                "request",
+                "routes",
+                "resource",
+            ],
         };
 
         (choice, comp)
@@ -352,25 +463,46 @@ fn make_module(name_opt: Option<&str>, pattern_arg: Option<&str>) {
         let _ = fs::write(target_dir.join("dto.rs"), generate_module_dto(singular));
     }
     if components.contains(&"model") {
-        let _ = fs::write(target_dir.join("model.rs"), generate_module_model(singular, &slug));
+        let _ = fs::write(
+            target_dir.join("model.rs"),
+            generate_module_model(singular, &slug),
+        );
     }
     if components.contains(&"repo") {
-        let _ = fs::write(target_dir.join("repository.rs"), generate_module_repo(singular));
+        let _ = fs::write(
+            target_dir.join("repository.rs"),
+            generate_module_repo(singular),
+        );
     }
     if components.contains(&"provider") {
-        let _ = fs::write(target_dir.join("provider.rs"), generate_module_provider(singular));
+        let _ = fs::write(
+            target_dir.join("provider.rs"),
+            generate_module_provider(singular),
+        );
     }
     if components.contains(&"request") {
-        let _ = fs::write(target_dir.join("request.rs"), generate_module_request(singular));
+        let _ = fs::write(
+            target_dir.join("request.rs"),
+            generate_module_request(singular),
+        );
     }
     if components.contains(&"controller") {
-        let _ = fs::write(target_dir.join("controller.rs"), generate_module_controller(singular));
+        let _ = fs::write(
+            target_dir.join("controller.rs"),
+            generate_module_controller(singular),
+        );
     }
     if components.contains(&"routes") {
-        let _ = fs::write(target_dir.join("routes.rs"), generate_module_routes(singular));
+        let _ = fs::write(
+            target_dir.join("routes.rs"),
+            generate_module_routes(singular),
+        );
     }
     if components.contains(&"resource") {
-        let _ = fs::write(target_dir.join("resource.rs"), generate_module_resource(singular, &slug));
+        let _ = fs::write(
+            target_dir.join("resource.rs"),
+            generate_module_resource(singular, &slug),
+        );
     }
 
     // 3. Register module in parent src/modules/mod.rs
@@ -385,11 +517,25 @@ fn make_module(name_opt: Option<&str>, pattern_arg: Option<&str>) {
             }
         }
     } else {
-        let _ = fs::write(parent_mod_path, format!("//! Application Domain Modules\n{}", mod_decl));
+        let _ = fs::write(
+            parent_mod_path,
+            format!("//! Application Domain Modules\n{}", mod_decl),
+        );
     }
 
-    prompt::info(format!("Scaffolded {singular} domain module in src/modules/{slug}/"));
-    println!("\n  \x1b[1mArchitecture:\x1b[0m  {}", if pattern_choice == "modular" { "Enterprise Modular (DDD)" } else if pattern_choice == "simple" { "Classic Monolith (Simple)" } else { "Custom Selection" });
+    prompt::info(format!(
+        "Scaffolded {singular} domain module in src/modules/{slug}/"
+    ));
+    println!(
+        "\n  \x1b[1mArchitecture:\x1b[0m  {}",
+        if pattern_choice == "modular" {
+            "Enterprise Modular (DDD)"
+        } else if pattern_choice == "simple" {
+            "Classic Monolith (Simple)"
+        } else {
+            "Custom Selection"
+        }
+    );
     println!("  \x1b[1mComponents:\x1b[0m    {:?}", components);
     println!("  \x1b[1mDirectory:\x1b[0m     {}", target_dir.display());
     println!("\n\x1b[32m[OK] Domain module scaffolded successfully!\x1b[0m");
@@ -399,7 +545,8 @@ fn make_module(name_opt: Option<&str>, pattern_arg: Option<&str>) {
 }
 
 fn generate_module_dto(singular: &str) -> String {
-    format!(r#"use serde::{{Deserialize, Serialize}};
+    format!(
+        r#"use serde::{{Deserialize, Serialize}};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -426,12 +573,14 @@ pub struct {singular}ResponseDto {{
     pub status: String,
     pub created_at: String,
 }}
-"#)
+"#
+    )
 }
 
 fn generate_module_model(singular: &str, slug: &str) -> String {
     let plural = format!("{}s", slug);
-    format!(r#"use terminus::prelude::*;
+    format!(
+        r#"use terminus::prelude::*;
 use serde::{{Deserialize, Serialize}};
 use std::collections::HashMap;
 
@@ -483,11 +632,13 @@ impl Model for {singular}Model {{
         }}
     }}
 }}
-"#)
+"#
+    )
 }
 
 fn generate_module_repo(singular: &str) -> String {
-    format!(r#"use super::model::{singular}Model;
+    format!(
+        r#"use super::model::{singular}Model;
 use terminus::prelude::*;
 use std::sync::{{Arc, Mutex}};
 
@@ -533,11 +684,13 @@ impl {singular}Repository for Sqlite{singular}Repository {{
         }}
     }}
 }}
-"#)
+"#
+    )
 }
 
 fn generate_module_provider(singular: &str) -> String {
-    format!(r#"use super::dto::{{Create{singular}Dto, {singular}ResponseDto, Update{singular}Dto}};
+    format!(
+        r#"use super::dto::{{Create{singular}Dto, {singular}ResponseDto, Update{singular}Dto}};
 use super::model::{singular}Model;
 use super::repository::{singular}Repository;
 use std::sync::Arc;
@@ -599,11 +752,13 @@ impl {singular}Provider {{
         }}
     }}
 }}
-"#)
+"#
+    )
 }
 
 fn generate_module_request(singular: &str) -> String {
-    format!(r#"use terminus::prelude::*;
+    format!(
+        r#"use terminus::prelude::*;
 use serde::{{Deserialize, Serialize}};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -641,11 +796,13 @@ impl ValidatedRequest for Update{singular}Request {{
         if errors.is_empty() {{ Ok(()) }} else {{ Err(errors) }}
     }}
 }}
-"#)
+"#
+    )
 }
 
 fn generate_module_controller(singular: &str) -> String {
-    format!(r#"use super::dto::{{Create{singular}Dto, Update{singular}Dto}};
+    format!(
+        r#"use super::dto::{{Create{singular}Dto, Update{singular}Dto}};
 use super::provider::{singular}Provider;
 use super::request::{{Create{singular}Request, Update{singular}Request}};
 use axum::{{
@@ -724,11 +881,13 @@ pub async fn delete(
         Err(e) => ApiResponse::<()>::error(e).into_response(),
     }}
 }}
-"#)
+"#
+    )
 }
 
 fn generate_module_routes(singular: &str) -> String {
-    format!(r#"use super::controller;
+    format!(
+        r#"use super::controller;
 use super::provider::{singular}Provider;
 use axum::{{
     routing::get,
@@ -742,12 +901,14 @@ pub fn router(provider: Arc<{singular}Provider>) -> Router {{
         .route("/:id", get(controller::find).put(controller::update).delete(controller::delete))
         .with_state(provider)
 }}
-"#)
+"#
+    )
 }
 
 fn generate_module_resource(singular: &str, slug: &str) -> String {
     let plural = format!("{}s", singular);
-    format!(r#"use terminus::prelude::*;
+    format!(
+        r#"use terminus::prelude::*;
 use super::repository::{singular}Repository;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -845,41 +1006,73 @@ impl Resource for {singular}Resource {{
         row.get("status") != Some("archived")
     }}
 }}
-"#)
+"#
+    )
 }
 
 fn generate_module_mod_rs(singular: &str, slug: &str, components: &[&str]) -> String {
     let mut out = String::new();
     out.push_str(&format!("//! Enterprise Domain Module: {}\n\n", singular));
 
-    if components.contains(&"controller") { out.push_str("pub mod controller;\n"); }
-    if components.contains(&"dto") { out.push_str("pub mod dto;\n"); }
-    if components.contains(&"model") { out.push_str("pub mod model;\n"); }
-    if components.contains(&"provider") { out.push_str("pub mod provider;\n"); }
-    if components.contains(&"repo") { out.push_str("pub mod repository;\n"); }
-    if components.contains(&"request") { out.push_str("pub mod request;\n"); }
-    if components.contains(&"resource") { out.push_str("pub mod resource;\n"); }
-    if components.contains(&"routes") { out.push_str("pub mod routes;\n"); }
+    if components.contains(&"controller") {
+        out.push_str("pub mod controller;\n");
+    }
+    if components.contains(&"dto") {
+        out.push_str("pub mod dto;\n");
+    }
+    if components.contains(&"model") {
+        out.push_str("pub mod model;\n");
+    }
+    if components.contains(&"provider") {
+        out.push_str("pub mod provider;\n");
+    }
+    if components.contains(&"repo") {
+        out.push_str("pub mod repository;\n");
+    }
+    if components.contains(&"request") {
+        out.push_str("pub mod request;\n");
+    }
+    if components.contains(&"resource") {
+        out.push_str("pub mod resource;\n");
+    }
+    if components.contains(&"routes") {
+        out.push_str("pub mod routes;\n");
+    }
 
     out.push_str("\nuse terminus::prelude::*;\nuse std::sync::{Arc, Mutex};\n\n");
     out.push_str(&format!("pub struct {}Module {{\n", singular));
     if components.contains(&"provider") {
-        out.push_str(&format!("    pub provider: Arc<provider::{}Provider>,\n", singular));
+        out.push_str(&format!(
+            "    pub provider: Arc<provider::{}Provider>,\n",
+            singular
+        ));
     }
     if components.contains(&"resource") {
-        out.push_str(&format!("    pub resource: Arc<resource::{}Resource>,\n", singular));
+        out.push_str(&format!(
+            "    pub resource: Arc<resource::{}Resource>,\n",
+            singular
+        ));
     }
     out.push_str("}\n\nimpl ");
     out.push_str(singular);
     out.push_str("Module {\n    pub fn new(conn: Arc<Mutex<rusqlite::Connection>>) -> Self {\n");
     if components.contains(&"repo") {
-        out.push_str(&format!("        let repo = Arc::new(repository::Sqlite{}Repository::new(conn));\n", singular));
+        out.push_str(&format!(
+            "        let repo = Arc::new(repository::Sqlite{}Repository::new(conn));\n",
+            singular
+        ));
     }
     if components.contains(&"provider") && components.contains(&"repo") {
-        out.push_str(&format!("        let provider = Arc::new(provider::{}Provider::new(repo.clone()));\n", singular));
+        out.push_str(&format!(
+            "        let provider = Arc::new(provider::{}Provider::new(repo.clone()));\n",
+            singular
+        ));
     }
     if components.contains(&"resource") && components.contains(&"repo") {
-        out.push_str(&format!("        let resource = Arc::new(resource::{}Resource::new(repo));\n", singular));
+        out.push_str(&format!(
+            "        let resource = Arc::new(resource::{}Resource::new(repo));\n",
+            singular
+        ));
     }
     out.push_str("        Self {\n");
     if components.contains(&"provider") {
@@ -890,7 +1083,8 @@ fn generate_module_mod_rs(singular: &str, slug: &str, components: &[&str]) -> St
     }
     out.push_str("        }\n    }\n}\n\nimpl AppModule for ");
     out.push_str(singular);
-    out.push_str(&format!(r#"Module {{
+    out.push_str(&format!(
+        r#"Module {{
     fn name(&self) -> &str {{
         "{singular}"
     }}
@@ -902,22 +1096,27 @@ fn generate_module_mod_rs(singular: &str, slug: &str, components: &[&str]) -> St
     fn description(&self) -> Option<&str> {{
         Some("Enterprise {singular} domain module")
     }}
-"#));
+"#
+    ));
 
     if components.contains(&"routes") && components.contains(&"provider") {
-        out.push_str(r#"
+        out.push_str(
+            r#"
     fn routes(&self) -> axum::Router {
         routes::router(self.provider.clone())
     }
-"#);
+"#,
+        );
     }
 
     if components.contains(&"resource") {
-        out.push_str(r#"
+        out.push_str(
+            r#"
     fn resource(&self) -> Option<Arc<dyn Resource>> {
         Some(self.resource.clone())
     }
-"#);
+"#,
+        );
     }
 
     out.push_str("}\n");
@@ -927,7 +1126,12 @@ fn generate_module_mod_rs(singular: &str, slug: &str, components: &[&str]) -> St
 fn make_controller(name_opt: Option<&str>, is_resource: bool) {
     let name_str = match name_opt {
         Some(n) if !n.is_empty() => n.to_string(),
-        _ => match prompt::text("What is the controller name?", None, Some("ProductController"), true) {
+        _ => match prompt::text(
+            "What is the controller name?",
+            None,
+            Some("ProductController"),
+            true,
+        ) {
             Ok(n) if !n.is_empty() => n,
             _ => {
                 eprintln!("\x1b[31mError:\x1b[0m Missing controller name.\nUsage: terminus make:controller <Name> [--resource]");
@@ -941,7 +1145,8 @@ fn make_controller(name_opt: Option<&str>, is_resource: bool) {
     let singular = base_name.to_lowercase();
 
     let content = if is_resource {
-        format!(r##"use terminus::prelude::*;
+        format!(
+            r##"use terminus::prelude::*;
 use axum::{{
     extract::Path,
     response::{{IntoResponse, Response}},
@@ -1068,9 +1273,11 @@ impl {name} {{
         redirect("/{plural}").with_warning(format!("{base_name} #{{}} deleted.", id)).into_response()
     }}
 }}
-"##)
+"##
+        )
     } else {
-        format!(r##"use terminus::prelude::*;
+        format!(
+            r##"use terminus::prelude::*;
 use axum::{{
     response::{{IntoResponse, Response}},
     routing::get,
@@ -1094,7 +1301,8 @@ impl {name} {{
         "#).title("{base_name}")
     }}
 }}
-"##)
+"##
+        )
     };
 
     println!("\x1b[32m[OK] Scaffolded Controller {name}:\x1b[0m\n");
@@ -1116,7 +1324,8 @@ fn make_model(name_opt: Option<&str>, with_migration: bool, with_controller: boo
 
     let singular = name;
     let plural = format!("{}s", name.to_lowercase());
-    let template = format!(r#"use terminus::prelude::*;
+    let template = format!(
+        r#"use terminus::prelude::*;
 use serde::{{Deserialize, Serialize}};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1137,7 +1346,8 @@ impl Model for {singular} {{
         "id"
     }}
 }}
-"#);
+"#
+    );
 
     println!("\x1b[32m[OK] Scaffolded Domain Model {singular}:\x1b[0m\n");
     println!("{template}");
@@ -1168,7 +1378,8 @@ fn make_seeder(name_opt: Option<&str>) {
     };
     let name = name_str.trim_end_matches(".rs");
 
-    let template = format!(r#"use terminus::prelude::*;
+    let template = format!(
+        r#"use terminus::prelude::*;
 use rusqlite::Connection;
 
 pub struct {name};
@@ -1192,7 +1403,8 @@ impl Seeder for {name} {{
         Ok(())
     }}
 }}
-"#);
+"#
+    );
 
     println!("\x1b[32m[OK] Scaffolded Database Seeder {name}:\x1b[0m\n");
     println!("{template}");
@@ -1216,7 +1428,8 @@ fn make_repo(name_opt: Option<&str>) {
     let name = name_str.as_str();
 
     let singular = name;
-    let template = format!(r#"use terminus::prelude::*;
+    let template = format!(
+        r#"use terminus::prelude::*;
 use std::sync::{{Arc, Mutex}};
 use rusqlite::{{Connection, params}};
 
@@ -1237,7 +1450,8 @@ impl Sqlite{singular}Repository {{
         Self {{ conn }}
     }}
 }}
-"#);
+"#
+    );
 
     println!("\x1b[32m[OK] Scaffolded SQLite Repository for {singular}:\x1b[0m\n");
     println!("{template}");
@@ -1258,7 +1472,8 @@ fn make_migration(name_opt: Option<&str>) {
 
     let timestamp = chrono::Local::now().format("%Y%m%d%H%M%S").to_string();
     let filename = format!("{}_{}.sql", timestamp, name);
-    let template = format!(r#"-- Migration: {name} ({timestamp})
+    let template = format!(
+        r#"-- Migration: {name} ({timestamp})
 
 -- [UP]
 CREATE TABLE IF NOT EXISTS items (
@@ -1270,7 +1485,8 @@ CREATE TABLE IF NOT EXISTS items (
 
 -- [DOWN]
 DROP TABLE IF EXISTS items;
-"#);
+"#
+    );
 
     let migrations_dir = Path::new("migrations");
     let _ = fs::create_dir_all(migrations_dir);
@@ -1283,9 +1499,9 @@ DROP TABLE IF EXISTS items;
 }
 
 const CORE_MIGRATIONS: &[(&str, &str)] = &[
-        (
-            "00000000_000001_create_users_table",
-            r#"CREATE TABLE IF NOT EXISTS users (
+    (
+        "00000000_000001_create_users_table",
+        r#"CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
                 email TEXT NOT NULL UNIQUE,
@@ -1294,10 +1510,10 @@ const CORE_MIGRATIONS: &[(&str, &str)] = &[
                 status TEXT NOT NULL DEFAULT 'Active',
                 created_at TEXT NOT NULL
             );"#,
-        ),
-        (
-            "00000000_000002_create_personal_access_tokens_table",
-            r#"CREATE TABLE IF NOT EXISTS personal_access_tokens (
+    ),
+    (
+        "00000000_000002_create_personal_access_tokens_table",
+        r#"CREATE TABLE IF NOT EXISTS personal_access_tokens (
                 id TEXT PRIMARY KEY,
                 tokenable_type TEXT NOT NULL,
                 tokenable_id TEXT NOT NULL,
@@ -1308,10 +1524,10 @@ const CORE_MIGRATIONS: &[(&str, &str)] = &[
                 expires_at TEXT,
                 created_at TEXT NOT NULL
             );"#,
-        ),
-        (
-            "00000000_000003_create_audit_logs_table",
-            r#"CREATE TABLE IF NOT EXISTS audit_logs (
+    ),
+    (
+        "00000000_000003_create_audit_logs_table",
+        r#"CREATE TABLE IF NOT EXISTS audit_logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id TEXT,
                 user_email TEXT,
@@ -1323,10 +1539,10 @@ const CORE_MIGRATIONS: &[(&str, &str)] = &[
                 payload TEXT,
                 created_at TEXT NOT NULL
             );"#,
-        ),
-        (
-            "00000000_000004_create_orders_table",
-            r#"CREATE TABLE IF NOT EXISTS orders (
+    ),
+    (
+        "00000000_000004_create_orders_table",
+        r#"CREATE TABLE IF NOT EXISTS orders (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 customer_name TEXT NOT NULL,
                 total_cents INTEGER NOT NULL DEFAULT 0,
@@ -1334,8 +1550,8 @@ const CORE_MIGRATIONS: &[(&str, &str)] = &[
                 notes TEXT,
                 created_at TEXT NOT NULL
             );"#,
-        ),
-    ];
+    ),
+];
 
 /// Core framework tables per backend. Identifiers mirror the SQLite
 /// originals; only auto-increment syntax differs by dialect.
@@ -1403,21 +1619,33 @@ fn migration_sections(sql: &str) -> (String, Option<String>) {
     let mut remaining = down.trim();
     loop {
         if remaining.starts_with("--") {
-            remaining = remaining.split_once('\n').map(|(_, rest)| rest.trim_start()).unwrap_or("");
+            remaining = remaining
+                .split_once('\n')
+                .map(|(_, rest)| rest.trim_start())
+                .unwrap_or("");
         } else if remaining.starts_with("/*") {
-            remaining = remaining.split_once("*/").map(|(_, rest)| rest.trim_start()).unwrap_or("");
+            remaining = remaining
+                .split_once("*/")
+                .map(|(_, rest)| rest.trim_start())
+                .unwrap_or("");
         } else {
             break;
         }
     }
-    let down = if remaining.is_empty() { None } else { Some(down) };
+    let down = if remaining.is_empty() {
+        None
+    } else {
+        Some(down)
+    };
     (up, down)
 }
 
 fn core_down_sql(name: &str) -> Option<&'static str> {
     match name {
         "00000000_000001_create_users_table" => Some("DROP TABLE IF EXISTS users"),
-        "00000000_000002_create_personal_access_tokens_table" => Some("DROP TABLE IF EXISTS personal_access_tokens"),
+        "00000000_000002_create_personal_access_tokens_table" => {
+            Some("DROP TABLE IF EXISTS personal_access_tokens")
+        }
         "00000000_000003_create_audit_logs_table" => Some("DROP TABLE IF EXISTS audit_logs"),
         "00000000_000004_create_orders_table" => Some("DROP TABLE IF EXISTS orders"),
         _ => None,
@@ -1434,17 +1662,25 @@ fn run_migrations_checked() -> Result<(), String> {
     let batch = db.latest_batch().map_err(|e| e.to_string())? + 1;
     let mut applied = 0;
     for (name, sql) in core_migrations(db.kind()) {
-        if db.apply_migration(name, &sql, batch).map_err(|e| format!("Failed to apply {name}: {e}"))? {
+        if db
+            .apply_migration(name, &sql, batch)
+            .map_err(|e| format!("Failed to apply {name}: {e}"))?
+        {
             println!("  [OK] Applied {name} (batch {batch})");
             applied += 1;
         }
     }
     for path in migration_files()? {
-        let name = path.file_name().and_then(|name| name.to_str())
+        let name = path
+            .file_name()
+            .and_then(|name| name.to_str())
             .ok_or_else(|| format!("Invalid migration filename: {}", path.display()))?;
         let sql = fs::read_to_string(&path).map_err(|e| format!("Cannot read {name}: {e}"))?;
         let (up, _) = migration_sections(&sql);
-        if db.apply_migration(name, &up, batch).map_err(|e| format!("Failed to apply {name}: {e}"))? {
+        if db
+            .apply_migration(name, &up, batch)
+            .map_err(|e| format!("Failed to apply {name}: {e}"))?
+        {
             println!("  [OK] Applied {name} (batch {batch})");
             applied += 1;
         }
@@ -1459,13 +1695,18 @@ fn run_migration_status() {
 
 fn run_migration_status_checked() -> Result<(), String> {
     let db = cli_database()?;
-    let applied: std::collections::HashMap<String, (i64, String)> = db.applied_migrations()
-        .map_err(|e| e.to_string())?.into_iter()
-        .map(|(name, batch, date)| (name, (batch, date))).collect();
+    let applied: std::collections::HashMap<String, (i64, String)> = db
+        .applied_migrations()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|(name, batch, date)| (name, (batch, date)))
+        .collect();
     let mut names: std::collections::BTreeSet<String> = applied.keys().cloned().collect();
     names.extend(CORE_MIGRATIONS.iter().map(|(name, _)| name.to_string()));
     for path in migration_files()? {
-        let name = path.file_name().and_then(|name| name.to_str())
+        let name = path
+            .file_name()
+            .and_then(|name| name.to_str())
             .ok_or_else(|| format!("Invalid migration filename: {}", path.display()))?;
         names.insert(name.to_string());
     }
@@ -1493,12 +1734,19 @@ fn run_migration_rollback_checked() -> Result<(), String> {
             return Ok(sql.to_string());
         }
         if Path::new(name).file_name().and_then(|part| part.to_str()) != Some(name) {
-            return Err(format!("Cannot roll back {name}: expected a migration filename"));
+            return Err(format!(
+                "Cannot roll back {name}: expected a migration filename"
+            ));
         }
         let path = Path::new("migrations").join(name);
-        let sql = fs::read_to_string(&path).map_err(|e| format!("Cannot read down SQL for {name}: {e}"))?;
+        let sql = fs::read_to_string(&path)
+            .map_err(|e| format!("Cannot read down SQL for {name}: {e}"))?;
         let (_, down) = migration_sections(&sql);
-        down.ok_or_else(|| format!("Cannot roll back {name}: add executable SQL after -- [DOWN]; history is unchanged"))
+        down.ok_or_else(|| {
+            format!(
+                "Cannot roll back {name}: add executable SQL after -- [DOWN]; history is unchanged"
+            )
+        })
     })?;
     if names.is_empty() {
         println!("Nothing to roll back.");
@@ -1514,7 +1762,10 @@ fn run_migration_rollback_checked() -> Result<(), String> {
 fn run_tinker(exec_opt: Option<&str>) {
     use std::io::{self, BufRead, Write};
 
-    println!("\x1b[1;36mTerminus Tinker REPL v{}\x1b[0m", env!("CARGO_PKG_VERSION"));
+    println!(
+        "\x1b[1;36mTerminus Tinker REPL v{}\x1b[0m",
+        env!("CARGO_PKG_VERSION")
+    );
     println!("Database: \x1b[33mterminus.db\x1b[0m (SQLite) | Type 'help' or 'exit'");
 
     let db_path = "terminus.db";
@@ -1589,7 +1840,10 @@ fn execute_tinker_command(conn: &rusqlite::Connection, cmd: &str) -> bool {
     }
 
     if lower.starts_with("schema ") || lower.starts_with(".schema ") {
-        let table = cmd.trim_start_matches("schema ").trim_start_matches(".schema ").trim();
+        let table = cmd
+            .trim_start_matches("schema ")
+            .trim_start_matches(".schema ")
+            .trim();
         let sql: Option<String> = conn
             .query_row(
                 "SELECT sql FROM sqlite_master WHERE type='table' AND name = ?1",
@@ -1611,12 +1865,14 @@ fn execute_tinker_command(conn: &rusqlite::Connection, cmd: &str) -> bool {
         return false;
     }
 
-    let is_query = lower.starts_with("select") || lower.starts_with("explain") || lower.starts_with("pragma");
+    let is_query =
+        lower.starts_with("select") || lower.starts_with("explain") || lower.starts_with("pragma");
     if is_query {
         match conn.prepare(cmd) {
             Ok(mut stmt) => {
                 let col_count = stmt.column_count();
-                let col_names: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
+                let col_names: Vec<String> =
+                    stmt.column_names().iter().map(|s| s.to_string()).collect();
                 println!("  {}", col_names.join(" | "));
                 println!("  {}", "-".repeat(col_names.join(" | ").len().max(20)));
 
@@ -1632,7 +1888,8 @@ fn execute_tinker_command(conn: &rusqlite::Connection, cmd: &str) -> bool {
                 while let Ok(Some(row)) = rows.next() {
                     let mut vals = Vec::new();
                     for i in 0..col_count {
-                        let val: String = row.get::<_, rusqlite::types::Value>(i)
+                        let val: String = row
+                            .get::<_, rusqlite::types::Value>(i)
                             .map(|v| match v {
                                 rusqlite::types::Value::Null => "NULL".into(),
                                 rusqlite::types::Value::Integer(i) => i.to_string(),
@@ -1663,19 +1920,28 @@ fn execute_tinker_command(conn: &rusqlite::Connection, cmd: &str) -> bool {
 fn run_schedule() {
     println!("\x1b[32m[OK] Running Scheduled Tasks (schedule:run)...\x1b[0m");
     let schedule = terminus::schedule::Schedule::new();
-    schedule.call("health:ping", || {
-        println!("  [TASK] Verified database and cache connectivity.");
-    }).every_minute();
-    schedule.call("session:prune", || {
-        let pruned = terminus::session::SessionStore::global().prune(86400 * 7);
-        println!("  [TASK] Pruned {} expired sessions.", pruned);
-    }).hourly();
-    schedule.call("tokens:clean_expired", || {
-        println!("  [TASK] Cleaned expired API tokens.");
-    }).daily();
+    schedule
+        .call("health:ping", || {
+            println!("  [TASK] Verified database and cache connectivity.");
+        })
+        .every_minute();
+    schedule
+        .call("session:prune", || {
+            let pruned = terminus::session::SessionStore::global().prune(86400 * 7);
+            println!("  [TASK] Pruned {} expired sessions.", pruned);
+        })
+        .hourly();
+    schedule
+        .call("tokens:clean_expired", || {
+            println!("  [TASK] Cleaned expired API tokens.");
+        })
+        .daily();
 
     let executed = schedule.run_due();
-    println!("\x1b[32m[OK] Schedule complete: {} task(s) executed.\x1b[0m", executed.len());
+    println!(
+        "\x1b[32m[OK] Schedule complete: {} task(s) executed.\x1b[0m",
+        executed.len()
+    );
 }
 
 fn list_schedule() {
@@ -1725,9 +1991,19 @@ fn run_seed() {
 
     let seed_users = [
         ("Pratik", "pratik@terminus.dev", "Superadmin", "Active"),
-        ("Dharma Raj", "dharma.shrestha@terminus.dev", "Admin", "Active"),
+        (
+            "Dharma Raj",
+            "dharma.shrestha@terminus.dev",
+            "Admin",
+            "Active",
+        ),
         ("Elena Rostova", "elena@terminus.dev", "Editor", "Active"),
-        ("Ranjan Gumanju", "ranjan.gumanju@terminus.dev", "Member", "Active"),
+        (
+            "Ranjan Gumanju",
+            "ranjan.gumanju@terminus.dev",
+            "Member",
+            "Active",
+        ),
     ];
 
     let mut user_count = 0;
@@ -1753,8 +2029,18 @@ fn run_seed() {
     let seed_orders = [
         ("Acme Logistics", 25000, "Paid", "Annual subscription"),
         ("Global Corp", 49900, "Paid", "Enterprise cluster"),
-        ("Starlight Studio", 1250, "Pending", "Hardware scanner badge"),
-        ("Nordic Retail", 8750, "Refunded", "Returned handheld terminal"),
+        (
+            "Starlight Studio",
+            1250,
+            "Pending",
+            "Hardware scanner badge",
+        ),
+        (
+            "Nordic Retail",
+            8750,
+            "Refunded",
+            "Returned handheld terminal",
+        ),
     ];
 
     let mut order_count = 0;
@@ -1766,14 +2052,20 @@ fn run_seed() {
         order_count += 1;
     }
 
-    println!("  [OK] Seeded {} user account(s) with Argon2id password hashes", user_count);
+    println!(
+        "  [OK] Seeded {} user account(s) with Argon2id password hashes",
+        user_count
+    );
     println!("  [OK] Seeded {} commercial order(s)", order_count);
     println!("\x1b[32m[OK] Database seeding completed successfully!\x1b[0m");
 }
 
 fn inspect_tables() {
     let db_path = "terminus.db";
-    println!("\x1b[32m[OK] Inspecting SQLite Database ({}):\x1b[0m\n", db_path);
+    println!(
+        "\x1b[32m[OK] Inspecting SQLite Database ({}):\x1b[0m\n",
+        db_path
+    );
 
     if !std::path::Path::new(db_path).exists() {
         println!("  Database file '{}' does not exist yet.", db_path);
@@ -1822,7 +2114,9 @@ fn inspect_tables() {
             .unwrap_or(0);
 
         let row_count: usize = conn
-            .query_row(&format!("SELECT COUNT(1) FROM '{}';", table), [], |r| r.get(0))
+            .query_row(&format!("SELECT COUNT(1) FROM '{}';", table), [], |r| {
+                r.get(0)
+            })
             .unwrap_or(0);
 
         println!("  {:<30} {:>10} {:>10}", table, col_count, row_count);
@@ -1840,7 +2134,8 @@ fn clear_cache() {
 fn make_job(name_opt: Option<&str>) {
     let name = name_opt.unwrap_or("ProcessPayment");
     println!("\x1b[32m[OK] Scaffolded Background Queue Job: {name}Job\x1b[0m\n");
-    println!(r#"use terminus::prelude::*;
+    println!(
+        r#"use terminus::prelude::*;
 
 pub struct {name}Job {{
     pub id: String,
@@ -1856,13 +2151,15 @@ impl Job for {name}Job {{
         Ok(())
     }}
 }}
-"#);
+"#
+    );
 }
 
 fn make_mail(name_opt: Option<&str>) {
     let name = name_opt.unwrap_or("OrderShipped");
     println!("\x1b[32m[OK] Scaffolded Transactional Mail Notification: {name}Mail\x1b[0m\n");
-    println!(r#"use terminus::prelude::*;
+    println!(
+        r#"use terminus::prelude::*;
 
 pub fn send_{name_snake}(to: &str, mailer: &Mailer) -> Result<(), String> {{
     MailMessage::to(to)
@@ -1871,12 +2168,15 @@ pub fn send_{name_snake}(to: &str, mailer: &Mailer) -> Result<(), String> {{
         .action("View Details", "/admin")
         .send_via(mailer)
 }}
-"#, name_snake = name.to_lowercase());
+"#,
+        name_snake = name.to_lowercase()
+    );
 }
 
 fn print_routes() {
     print_banner();
-    println!(r#"Registered Application Routes & Endpoints:
+    println!(
+        r#"Registered Application Routes & Endpoints:
 
   METHOD       ROUTE                     HANDLER / DESCRIPTION
   ──────────────────────────────────────────────────────────────────────────
@@ -1894,7 +2194,8 @@ fn print_routes() {
   GET          /api/v1/users             REST JSON Users List (Personal Access Token)
   GET          /api/v1/orders            Paginated Active Record Orders
   GET          /admin/ws                 Real-time WebSocket Broadcast Channel (Echo)
-"#);
+"#
+    );
 }
 
 fn run_ws_server() {
@@ -1990,11 +2291,25 @@ fn make_token(name_opt: Option<&str>) {
     match store.create_token("User", "1", &name, abilities.clone(), None) {
         Ok(new_token) => {
             prompt::info("Personal Access Token created successfully!");
-            println!("\n  \x1b[1mToken ID:\x1b[0m      {}", new_token.access_token.id);
-            println!("  \x1b[1mName:\x1b[0m          {}", new_token.access_token.name);
-            println!("  \x1b[1mAbilities:\x1b[0m     {:?}", new_token.access_token.abilities);
-            println!("  \x1b[32;1mPlain Token:\x1b[0m   {}\n", new_token.plain_text_token);
-            prompt::warning("Please copy this token now. For your security, it will NOT be displayed again.");
+            println!(
+                "\n  \x1b[1mToken ID:\x1b[0m      {}",
+                new_token.access_token.id
+            );
+            println!(
+                "  \x1b[1mName:\x1b[0m          {}",
+                new_token.access_token.name
+            );
+            println!(
+                "  \x1b[1mAbilities:\x1b[0m     {:?}",
+                new_token.access_token.abilities
+            );
+            println!(
+                "  \x1b[32;1mPlain Token:\x1b[0m   {}\n",
+                new_token.plain_text_token
+            );
+            prompt::warning(
+                "Please copy this token now. For your security, it will NOT be displayed again.",
+            );
         }
         Err(e) => {
             prompt::error(format!("Failed to create token: {e}"));
@@ -2039,7 +2354,10 @@ fn list_tokens() {
         })
         .collect();
 
-    prompt::table(&["ID", "NAME", "ABILITIES", "LAST USED", "CREATED AT"], &rows);
+    prompt::table(
+        &["ID", "NAME", "ABILITIES", "LAST USED", "CREATED AT"],
+        &rows,
+    );
 }
 
 fn revoke_token(id_opt: Option<&str>) {
@@ -2054,7 +2372,10 @@ fn revoke_token(id_opt: Option<&str>) {
         },
     };
 
-    match prompt::confirm(&format!("Are you sure you want to revoke token '{id}'?"), false) {
+    match prompt::confirm(
+        &format!("Are you sure you want to revoke token '{id}'?"),
+        false,
+    ) {
         Ok(true) => {}
         _ => {
             println!("Revocation cancelled.");
@@ -2088,41 +2409,64 @@ fn revoke_token(id_opt: Option<&str>) {
 fn make_sdk(lang: Option<&str>) {
     let language = lang.unwrap_or("typescript");
     let sdk_gen = SdkGenerator::new("Terminus App", "1.0.0")
-        .type_schema("User", vec![
-            ("id", "string"),
-            ("name", "string"),
-            ("email", "string"),
-            ("role", "string"),
-        ])
-        .type_schema("Order", vec![
-            ("id", "string"),
-            ("customerName", "string"),
-            ("total", "number"),
-            ("status", "string"),
-            ("createdAt", "string"),
-        ])
-        .endpoint("GET", "/api/orders", None, "Order[]", "List customer orders")
-        .endpoint("POST", "/api/orders", Some("Partial<Order>"), "Order", "Place a new order")
-        .endpoint("GET", "/api/user/profile", None, "User", "Get authenticated user profile");
+        .type_schema(
+            "User",
+            vec![
+                ("id", "string"),
+                ("name", "string"),
+                ("email", "string"),
+                ("role", "string"),
+            ],
+        )
+        .type_schema(
+            "Order",
+            vec![
+                ("id", "string"),
+                ("customerName", "string"),
+                ("total", "number"),
+                ("status", "string"),
+                ("createdAt", "string"),
+            ],
+        )
+        .endpoint(
+            "GET",
+            "/api/orders",
+            None,
+            "Order[]",
+            "List customer orders",
+        )
+        .endpoint(
+            "POST",
+            "/api/orders",
+            Some("Partial<Order>"),
+            "Order",
+            "Place a new order",
+        )
+        .endpoint(
+            "GET",
+            "/api/user/profile",
+            None,
+            "User",
+            "Get authenticated user profile",
+        );
 
     let (filename, code) = match language {
         "openapi" | "swagger" | "json" => (
             "openapi.json",
             serde_json::to_string_pretty(&sdk_gen.to_openapi_json()).unwrap_or_default(),
         ),
-        _ => (
-            "terminus-client.ts",
-            sdk_gen.to_typescript(),
-        ),
+        _ => ("terminus-client.ts", sdk_gen.to_typescript()),
     };
 
     if let Err(e) = std::fs::write(filename, code) {
         eprintln!("\x1b[31mError writing client contract:\x1b[0m {e}");
         return;
     }
-    println!("\x1b[32mSuccess:\x1b[0m Generated typed client contract in \x1b[1m{}\x1b[0m", filename);
+    println!(
+        "\x1b[32mSuccess:\x1b[0m Generated typed client contract in \x1b[1m{}\x1b[0m",
+        filename
+    );
 }
-
 
 fn run_new_project(
     name_opt: Option<&str>,
@@ -2138,7 +2482,12 @@ fn run_new_project(
     let app_name = match name_opt {
         Some(n) if !n.is_empty() => n.to_string(),
         _ if non_interactive => "terminus_app".to_string(),
-        _ => match prompt::text("What is your project name?", Some("my-terminus-app"), None, true) {
+        _ => match prompt::text(
+            "What is your project name?",
+            Some("my-terminus-app"),
+            None,
+            true,
+        ) {
             Ok(n) if !n.is_empty() => n,
             _ => "my-terminus-app".to_string(),
         },
@@ -2155,10 +2504,17 @@ fn run_new_project(
         None if non_interactive => ProjectPreset::Fullstack,
         None => {
             let options = [
-                ("fullstack", "Fullstack Web Application (Axum + Static UI + Admin Dashboard)"),
-                ("backend", "Backend API (High-throughput Headless JSON API + OpenAPI 3.0 Specs)"),
+                (
+                    "fullstack",
+                    "Fullstack Web Application (Axum + Static UI + Admin Dashboard)",
+                ),
+                (
+                    "backend",
+                    "Backend API (High-throughput Headless JSON API + OpenAPI 3.0 Specs)",
+                ),
             ];
-            let key = prompt::select("Choose architecture preset:", &options, 0).unwrap_or("fullstack");
+            let key =
+                prompt::select("Choose architecture preset:", &options, 0).unwrap_or("fullstack");
             ProjectPreset::from_str_loose(key).unwrap_or(ProjectPreset::Fullstack)
         }
     };
@@ -2176,7 +2532,10 @@ fn run_new_project(
     let port = if let Some(p) = port_opt.and_then(|p| p.parse::<u16>().ok()) {
         p
     } else if non_interactive {
-        std::env::var("PORT").ok().and_then(|p| p.parse::<u16>().ok()).unwrap_or(3000)
+        std::env::var("PORT")
+            .ok()
+            .and_then(|p| p.parse::<u16>().ok())
+            .unwrap_or(3000)
     } else {
         let options = [
             ("3000", "Port 3000 (Standard Web / Fullstack default)"),
@@ -2184,7 +2543,8 @@ fn run_new_project(
             ("8080", "Port 8080 (Cloud proxy / Enterprise gateway)"),
             ("custom", "Custom port number..."),
         ];
-        let choice = prompt::select("Choose application listening port:", &options, 0).unwrap_or("3000");
+        let choice =
+            prompt::select("Choose application listening port:", &options, 0).unwrap_or("3000");
         if choice == "custom" {
             match prompt::text("Enter custom port number:", Some("3000"), None, false) {
                 Ok(p) => p.parse::<u16>().unwrap_or(3000),
@@ -2205,7 +2565,11 @@ fn run_new_project(
     let target_dir = Path::new(&app_name);
     match scaffold_project(target_dir, &config) {
         Ok(created) => {
-            println!("\n\x1b[32mSuccess:\x1b[0m Scaffolded \x1b[1m{}\x1b[0m project across {} files.\n", app_name, created.len());
+            println!(
+                "\n\x1b[32mSuccess:\x1b[0m Scaffolded \x1b[1m{}\x1b[0m project across {} files.\n",
+                app_name,
+                created.len()
+            );
             println!("\x1b[1mConfiguration:\x1b[0m");
             let target_names: Vec<&str> = config.targets.iter().map(|t| t.as_str()).collect();
             println!("  • Targets  : {}", target_names.join(", "));
@@ -2296,7 +2660,11 @@ fn inspect_database_into_spec(spec: &mut terminus::spec::AppSpec) {
         Ok(cfg) => cfg,
         Err(err) => {
             spec.origin.database_source = Some(format!("{db_source} (invalid)"));
-            spec.add_unavailable("database", db_source, format!("Invalid DATABASE_URL: {err}"));
+            spec.add_unavailable(
+                "database",
+                db_source,
+                format!("Invalid DATABASE_URL: {err}"),
+            );
             return;
         }
     };
@@ -2317,7 +2685,10 @@ fn inspect_database_into_spec(spec: &mut terminus::spec::AppSpec) {
             spec.add_unavailable(
                 "database",
                 &config.database,
-                format!("Configured SQLite database '{}' does not exist", config.database),
+                format!(
+                    "Configured SQLite database '{}' does not exist",
+                    config.database
+                ),
             );
         } else {
             spec.origin.database_source = Some("default (not found)".to_string());
@@ -2355,7 +2726,11 @@ fn inspect_database_into_spec(spec: &mut terminus::spec::AppSpec) {
     match observed_models {
         Ok(models) => {
             for model in models {
-                if !spec.models.iter().any(|existing| existing.table == model.table) {
+                if !spec
+                    .models
+                    .iter()
+                    .any(|existing| existing.table == model.table)
+                {
                     spec.models.push(model);
                 }
             }
@@ -2500,7 +2875,9 @@ fn print_agent_context() {
             (
                 format!("{:?}", db.kind()),
                 applied,
-                CORE_MIGRATIONS.len().saturating_sub(applied.min(CORE_MIGRATIONS.len())),
+                CORE_MIGRATIONS
+                    .len()
+                    .saturating_sub(applied.min(CORE_MIGRATIONS.len())),
             )
         }
         Err(_) => ("unknown".to_string(), 0, CORE_MIGRATIONS.len()),
@@ -2539,18 +2916,19 @@ fn print_agent_guide(is_json: bool) {
                 "admin": "Auto-discovering admin panels with typed FormMode::SlideOver and Column builders"
             },
             "cli_commands": {
-                "new": "terminus new [project_name] [--preset=...] [--targets=...]",
+                "new": "terminus new [project_name] [--preset=...] [--frontend=...] [--db=...] [--port=...] [--yes]",
                 "schema": "terminus schema [--json] [--spec=<path>]",
                 "make_slice": "terminus make:slice <Entity> [--fields='field:type,...']",
                 "make_resource": "terminus make:resource <Entity>",
-                "make_sdk": "terminus make:sdk --lang=ts|swift|kotlin|openapi",
+                "make_sdk": "terminus make:sdk --lang=ts|openapi",
                 "migrate": "terminus migrate",
                 "tinker": "terminus tinker"
             }
         });
         println!("{}", serde_json::to_string_pretty(&guide).unwrap());
     } else {
-        println!(r#"# Terminus Agent Architecture & Convention Guide
+        println!(
+            r#"# Terminus Agent Architecture & Convention Guide
 
 Terminus is an agent-native full-stack universal application platform for Rust and Axum.
 
@@ -2593,20 +2971,24 @@ In src/main.rs:
       .run()
       .await
 
-### 5. Multi-Target Platform Matrix (Strictly Optional)
-Terminus powers Web by default, with modular on-demand targets for Desktop (Native Station IPC), Mobile (Native Swift & Kotlin), and IoT Hardware Scanners:
+### 5. Client Contract & OpenAPI Generation
+Export typed TypeScript client contracts and OpenAPI 3.0.3 specifications:
   terminus make:sdk --lang=ts
-  terminus make:sdk --lang=swift
-  terminus make:sdk --lang=kotlin
   terminus make:sdk --lang=openapi
-"#);
+"#
+        );
     }
 }
 
 fn make_slice(name_opt: Option<&str>, fields_opt: Option<&str>) {
     let name_str = match name_opt {
         Some(n) if !n.is_empty() => n.to_string(),
-        _ => match prompt::text("What is the entity name for this vertical slice?", None, Some("Order"), true) {
+        _ => match prompt::text(
+            "What is the entity name for this vertical slice?",
+            None,
+            Some("Order"),
+            true,
+        ) {
             Ok(n) if !n.is_empty() => n,
             _ => {
                 eprintln!("\x1b[31mError:\x1b[0m Missing entity name.\nUsage: terminus make:slice <Entity> [--fields=\"field:type,...\"]");
@@ -2621,7 +3003,11 @@ fn make_slice(name_opt: Option<&str>, fields_opt: Option<&str>) {
 
     // Parse fields
     let mut parsed_fields: Vec<(String, String, String)> = Vec::new();
-    parsed_fields.push(("id".to_string(), "String".to_string(), "TEXT PRIMARY KEY".to_string()));
+    parsed_fields.push((
+        "id".to_string(),
+        "String".to_string(),
+        "TEXT PRIMARY KEY".to_string(),
+    ));
 
     if let Some(raw_fields) = fields_opt {
         for item in raw_fields.split(',') {
@@ -2635,18 +3021,34 @@ fn make_slice(name_opt: Option<&str>, fields_opt: Option<&str>) {
             }
             let f_type = parts.get(1).copied().unwrap_or("string");
             let (rust_type, sql_type) = match f_type.to_lowercase().as_str() {
-                "u64" | "i64" | "int" | "integer" => ("i64".to_string(), "INTEGER NOT NULL".to_string()),
+                "u64" | "i64" | "int" | "integer" => {
+                    ("i64".to_string(), "INTEGER NOT NULL".to_string())
+                }
                 "f64" | "float" | "double" => ("f64".to_string(), "REAL NOT NULL".to_string()),
-                "bool" | "boolean" => ("bool".to_string(), "INTEGER NOT NULL DEFAULT 0".to_string()),
+                "bool" | "boolean" => {
+                    ("bool".to_string(), "INTEGER NOT NULL DEFAULT 0".to_string())
+                }
                 _ => ("String".to_string(), "TEXT NOT NULL".to_string()),
             };
             parsed_fields.push((f_name, rust_type, sql_type));
         }
     } else {
-        parsed_fields.push(("name".to_string(), "String".to_string(), "TEXT NOT NULL".to_string()));
-        parsed_fields.push(("status".to_string(), "String".to_string(), "TEXT NOT NULL DEFAULT 'active'".to_string()));
+        parsed_fields.push((
+            "name".to_string(),
+            "String".to_string(),
+            "TEXT NOT NULL".to_string(),
+        ));
+        parsed_fields.push((
+            "status".to_string(),
+            "String".to_string(),
+            "TEXT NOT NULL DEFAULT 'active'".to_string(),
+        ));
     }
-    parsed_fields.push(("created_at".to_string(), "String".to_string(), "DATETIME DEFAULT CURRENT_TIMESTAMP".to_string()));
+    parsed_fields.push((
+        "created_at".to_string(),
+        "String".to_string(),
+        "DATETIME DEFAULT CURRENT_TIMESTAMP".to_string(),
+    ));
 
     let target_dir = Path::new("src").join("modules").join(&slug);
     if let Err(e) = fs::create_dir_all(&target_dir) {
@@ -2659,17 +3061,20 @@ fn make_slice(name_opt: Option<&str>, fields_opt: Option<&str>) {
     for (f_name, r_type, _) in &parsed_fields {
         model_fields.push_str(&format!("    pub {}: {},\n", f_name, r_type));
     }
-    let model_code = format!(r#"use serde::{{Deserialize, Serialize}};
+    let model_code = format!(
+        r#"use serde::{{Deserialize, Serialize}};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct {singular} {{
 {model_fields}}}
-"#);
+"#
+    );
     let _ = fs::write(target_dir.join("model.rs"), model_code);
 
     // 2. repository.rs
-    let repo_code = format!(r#"use super::model::{singular};
+    let repo_code = format!(
+        r#"use super::model::{singular};
 use std::sync::{{Arc, Mutex}};
 
 pub trait {singular}Repository: Send + Sync {{
@@ -2716,7 +3121,8 @@ impl {singular}Repository for InMemory{singular}Repository {{
         guard.len() < initial_len
     }}
 }}
-"#);
+"#
+    );
     let _ = fs::write(target_dir.join("repository.rs"), repo_code);
 
     // 3. request.rs
@@ -2731,7 +3137,8 @@ impl {singular}Repository for InMemory{singular}Repository {{
             val_rules.push_str(&format!("            .rule(\"{f_name}\", |r| !r.{f_name}.trim().is_empty(), \"{f_name} cannot be empty\")\n"));
         }
     }
-    let request_code = format!(r#"use serde::{{Deserialize, Serialize}};
+    let request_code = format!(
+        r#"use serde::{{Deserialize, Serialize}};
 use terminus::prelude::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2745,11 +3152,13 @@ impl Create{singular}Request {{
 {val_rules}            .validate()
     }}
 }}
-"#);
+"#
+    );
     let _ = fs::write(target_dir.join("request.rs"), request_code);
 
     // 4. controller.rs
-    let controller_code = format!(r#"use axum::{{
+    let controller_code = format!(
+        r#"use axum::{{
     extract::{{Path, State}},
     response::IntoResponse,
     Json,
@@ -2804,11 +3213,13 @@ pub async fn destroy(
         ApiResponse::<()>::error(format!("{singular} not found")).into_response()
     }}
 }}
-"#);
+"#
+    );
     let _ = fs::write(target_dir.join("controller.rs"), controller_code);
 
     // 5. resource.rs
-    let resource_code = format!(r#"use terminus::prelude::*;
+    let resource_code = format!(
+        r#"use terminus::prelude::*;
 
 pub struct {singular}Resource;
 
@@ -2850,7 +3261,8 @@ impl Resource for {singular}Resource {{
             ]))
     }}
 }}
-"#);
+"#
+    );
     let _ = fs::write(target_dir.join("resource.rs"), resource_code);
 
     // 6. migration.sql
@@ -2858,11 +3270,16 @@ impl Resource for {singular}Resource {{
     for (f_name, _, s_type) in &parsed_fields {
         sql_cols.push(format!("    {} {}", f_name, s_type));
     }
-    let migration_sql = format!("CREATE TABLE IF NOT EXISTS {} (\n{}\n);\n", table_name, sql_cols.join(",\n"));
+    let migration_sql = format!(
+        "CREATE TABLE IF NOT EXISTS {} (\n{}\n);\n",
+        table_name,
+        sql_cols.join(",\n")
+    );
     let _ = fs::write(target_dir.join("migration.sql"), migration_sql);
 
     // 7. mod.rs
-    let mod_code = format!(r#"pub mod controller;
+    let mod_code = format!(
+        r#"pub mod controller;
 pub mod model;
 pub mod repository;
 pub mod request;
@@ -2912,7 +3329,8 @@ impl AppModule for {singular}Module {{
         Some(Arc::new({singular}Resource))
     }}
 }}
-"#);
+"#
+    );
     let _ = fs::write(target_dir.join("mod.rs"), mod_code);
 
     // Register with src/modules/mod.rs if it exists
@@ -2926,10 +3344,16 @@ impl AppModule for {singular}Module {{
             }
         }
     } else {
-        let _ = fs::write(&parent_mod_path, format!("//! Application Domain Modules\n{}", mod_decl));
+        let _ = fs::write(
+            &parent_mod_path,
+            format!("//! Application Domain Modules\n{}", mod_decl),
+        );
     }
 
-    println!("\x1b[32m[OK] Scaffolded full-stack vertical slice: {}\x1b[0m", singular);
+    println!(
+        "\x1b[32m[OK] Scaffolded full-stack vertical slice: {}\x1b[0m",
+        singular
+    );
     println!("  Directory: {}", target_dir.display());
     println!("  Artifacts created:");
     println!("    • mod.rs         (AppModule trait implementation & Axum router)");

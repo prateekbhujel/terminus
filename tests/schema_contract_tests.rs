@@ -372,9 +372,38 @@ fn runnable_quickstart_exports_spec_manifest_for_terminus_schema() {
     );
 }
 
+#[cfg(any(feature = "postgres", feature = "mysql"))]
+fn external_test_url(var: &str, service: &str) -> Option<String> {
+    if let Ok(url) = std::env::var(var) {
+        let trimmed = url.trim().to_string();
+        if !trimmed.is_empty() {
+            return Some(trimmed);
+        }
+    }
+    let required = std::env::var("TERMINUS_REQUIRE_EXTERNAL_TESTS")
+        .ok()
+        .map(|raw| {
+            let val = raw.trim().to_ascii_lowercase();
+            match val.as_str() {
+                "1" | "true" | "sql" => matches!(service, "postgres" | "mysql" | "redis"),
+                "all" => true,
+                _ => val.split(',').any(|item| item.trim() == service),
+            }
+        })
+        .unwrap_or(false);
+    if required {
+        panic!(
+            "{var} must be set when TERMINUS_REQUIRE_EXTERNAL_TESTS requires '{service}' (external-service tests must not silently skip)"
+        );
+    }
+    eprintln!("skipping: {var} not set");
+    None
+}
+
 #[test]
 fn cli_schema_respects_database_url_for_postgres_and_mysql_when_configured() {
-    if let Ok(pg_url) = std::env::var("TERMINUS_TEST_POSTGRES_URL") {
+    #[cfg(feature = "postgres")]
+    if let Some(pg_url) = external_test_url("TERMINUS_TEST_POSTGRES_URL", "postgres") {
         let dir = TempWorkspace::new();
         let db = Database::connect(&pg_url).unwrap();
         let table = format!("schema_probe_{}", std::process::id());
@@ -406,7 +435,8 @@ fn cli_schema_respects_database_url_for_postgres_and_mysql_when_configured() {
         }
     }
 
-    if let Ok(mysql_url) = std::env::var("TERMINUS_TEST_MYSQL_URL") {
+    #[cfg(feature = "mysql")]
+    if let Some(mysql_url) = external_test_url("TERMINUS_TEST_MYSQL_URL", "mysql") {
         let dir = TempWorkspace::new();
         let db = Database::connect(&mysql_url).unwrap();
         let table = format!("schema_probe_{}", std::process::id());

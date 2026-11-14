@@ -4,10 +4,10 @@
 //! with sessions, one-time flash messages, CSRF tokens, authenticated users,
 //! and responsive Tailwind CSS layouts.
 
-use axum::http::StatusCode;
-use axum::response::{Html, IntoResponse, Response};
 use crate::domain::User;
 use crate::helpers::{auth, session};
+use axum::http::StatusCode;
+use axum::response::{Html, IntoResponse, Response};
 use std::collections::HashMap;
 
 /// Represents an HTML view ready to be rendered and returned from a web handler.

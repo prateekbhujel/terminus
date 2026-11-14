@@ -23,8 +23,11 @@ terminus db:seed   # prints a one-time generated password; local development onl
 Run the same checks as CI:
 
 ```bash
+cargo fmt --all -- --check
 cargo test --all-targets
+cargo test --no-default-features
 cargo clippy --all-targets -- -D warnings
+cargo clippy --no-default-features --all-targets -- -D warnings
 RUSTDOCFLAGS='-D warnings' cargo doc --no-deps
 ```
 
@@ -36,7 +39,7 @@ RUSTDOCFLAGS='-D warnings' cargo doc --no-deps
 
 ## Reporting bugs
 
-Open a GitHub issue with your Terminus and Rust versions, a minimal reproduction, expected behavior, and actual behavior (including CLI exit codes or HTTP statuses where relevant).
+Open a GitHub issue with your Terminus and Rust versions, a minimal reproduction, expected behavior, and actual behavior (including CLI exit codes or HTTP statuses where relevant). See [RELEASING.md](RELEASING.md) for the full release checklist, external-service test matrix, and minimal reproduction template.
 
 ## Security reports
 

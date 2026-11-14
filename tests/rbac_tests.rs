@@ -11,18 +11,30 @@ fn test_role_hierarchy_and_permissions() {
     let admin_role = Role::Admin;
     assert!(admin_role.can("users.create"));
     assert!(admin_role.can("users.edit"));
-    assert!(!admin_role.can("users.delete"), "Admins cannot delete users");
+    assert!(
+        !admin_role.can("users.delete"),
+        "Admins cannot delete users"
+    );
     assert!(admin_role.can("orders.delete"));
     assert!(admin_role.can("audit.view"));
 
     let editor_role = Role::Editor;
     assert!(editor_role.can("users.view"));
-    assert!(!editor_role.can("users.create"), "Editors cannot create users");
+    assert!(
+        !editor_role.can("users.create"),
+        "Editors cannot create users"
+    );
     assert!(!editor_role.can("users.edit"), "Editors cannot edit users");
     assert!(editor_role.can("orders.create"));
     assert!(editor_role.can("orders.edit"));
-    assert!(!editor_role.can("orders.delete"), "Editors cannot delete orders");
-    assert!(!editor_role.can("audit.view"), "Editors cannot view audit logs");
+    assert!(
+        !editor_role.can("orders.delete"),
+        "Editors cannot delete orders"
+    );
+    assert!(
+        !editor_role.can("audit.view"),
+        "Editors cannot view audit logs"
+    );
 
     let member_role = Role::Member;
     assert!(member_role.can("users.view"));
@@ -56,7 +68,10 @@ fn test_user_status_guards() {
         created_at: "2026-10-01".into(),
         ..Default::default()
     };
-    assert!(!suspended_admin.can("users.create"), "Suspended users cannot perform actions");
+    assert!(
+        !suspended_admin.can("users.create"),
+        "Suspended users cannot perform actions"
+    );
 
     let pending_admin = User {
         id: "3".into(),
@@ -67,7 +82,10 @@ fn test_user_status_guards() {
         created_at: "2026-10-01".into(),
         ..Default::default()
     };
-    assert!(!pending_admin.can("users.create"), "Pending users cannot perform actions");
+    assert!(
+        !pending_admin.can("users.create"),
+        "Pending users cannot perform actions"
+    );
 }
 
 #[test]
@@ -146,7 +164,10 @@ fn test_explicit_deny_strictly_overrides_superadmin() {
 
     // Explicit deny overrides superadmin privilege!
     superadmin.deny_permission("orders.delete");
-    assert!(!superadmin.can("orders.delete"), "Explicit deny strictly overrides superadmin");
+    assert!(
+        !superadmin.can("orders.delete"),
+        "Explicit deny strictly overrides superadmin"
+    );
     assert!(superadmin.has_explicit_deny("orders.delete"));
 
     // Other permissions remain granted to superadmin
@@ -189,8 +210,14 @@ fn test_wildcard_permissions_and_hierarchies() {
     let mut sa = User::new("sa_2", "Super Admin", "sa2@example.com", Role::Superadmin);
     sa.deny_permission("orders.*");
     assert!(!sa.can("orders.view"), "Wildcard deny blocks orders.view");
-    assert!(!sa.can("orders.delete"), "Wildcard deny blocks orders.delete");
-    assert!(sa.can("users.view"), "Wildcard deny does not affect users.view");
+    assert!(
+        !sa.can("orders.delete"),
+        "Wildcard deny blocks orders.delete"
+    );
+    assert!(
+        sa.can("users.view"),
+        "Wildcard deny does not affect users.view"
+    );
 }
 
 #[test]

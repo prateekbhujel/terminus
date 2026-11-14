@@ -160,7 +160,10 @@ impl CacheDriver for SqliteCache {
             Ok((value, expires_at)) => {
                 if let Some(exp) = expires_at {
                     if exp <= now {
-                        let _ = conn.execute("DELETE FROM _terminus_cache WHERE key = ?1", rusqlite::params![key]);
+                        let _ = conn.execute(
+                            "DELETE FROM _terminus_cache WHERE key = ?1",
+                            rusqlite::params![key],
+                        );
                         return None;
                     }
                 }
@@ -184,9 +187,12 @@ impl CacheDriver for SqliteCache {
 
     fn forget(&self, key: &str) -> bool {
         let conn = self.conn.lock().unwrap();
-        conn.execute("DELETE FROM _terminus_cache WHERE key = ?1", rusqlite::params![key])
-            .map(|n| n > 0)
-            .unwrap_or(false)
+        conn.execute(
+            "DELETE FROM _terminus_cache WHERE key = ?1",
+            rusqlite::params![key],
+        )
+        .map(|n| n > 0)
+        .unwrap_or(false)
     }
 
     fn flush(&self) {

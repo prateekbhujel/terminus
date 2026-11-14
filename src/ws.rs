@@ -154,12 +154,7 @@ impl Broadcaster {
     }
 
     /// Add a member to a presence channel. Returns false when unauthorized.
-    pub fn join_presence(
-        &self,
-        channel: &str,
-        user_id: &str,
-        info: serde_json::Value,
-    ) -> bool {
+    pub fn join_presence(&self, channel: &str, user_id: &str, info: serde_json::Value) -> bool {
         if channel_kind(channel) != ChannelKind::Presence || !self.authorize(user_id, channel) {
             return false;
         }
@@ -169,7 +164,11 @@ impl Broadcaster {
                 .or_default()
                 .insert(user_id.to_string(), info);
         }
-        self.broadcast(channel, "presence:joined", serde_json::json!({ "user_id": user_id }));
+        self.broadcast(
+            channel,
+            "presence:joined",
+            serde_json::json!({ "user_id": user_id }),
+        );
         true
     }
 
@@ -184,7 +183,11 @@ impl Broadcaster {
             false
         };
         if removed {
-            self.broadcast(channel, "presence:left", serde_json::json!({ "user_id": user_id }));
+            self.broadcast(
+                channel,
+                "presence:left",
+                serde_json::json!({ "user_id": user_id }),
+            );
         }
         removed
     }

@@ -1,6 +1,6 @@
-use std::collections::HashMap;
 use crate::form::{FieldType, Form};
 use crate::resource::Resource;
+use std::collections::HashMap;
 
 pub fn render_form_page(
     resource: &dyn Resource,
@@ -13,7 +13,10 @@ pub fn render_form_page(
     let is_edit = id.is_some();
 
     let (title, form_action) = if let Some(rec_id) = id {
-        (format!("Edit {name} #{rec_id}"), format!("/admin/{slug}/edit/{rec_id}"))
+        (
+            format!("Edit {name} #{rec_id}"),
+            format!("/admin/{slug}/edit/{rec_id}"),
+        )
     } else {
         (format!("Create {name}"), format!("/admin/{slug}/create"))
     };
@@ -58,7 +61,11 @@ pub fn render_form_page(
         title = title,
         form_action = form_action,
         fields_html = fields_html,
-        btn_text = if is_edit { "Save Changes" } else { "Create Record" }
+        btn_text = if is_edit {
+            "Save Changes"
+        } else {
+            "Create Record"
+        }
     )
 }
 
@@ -83,9 +90,7 @@ fn render_page_fields(form: &Form, values: Option<&HashMap<String, String>>) -> 
                 let mut opts_html = String::new();
                 for (val, label) in options {
                     let sel = if val == current_val { "selected" } else { "" };
-                    opts_html.push_str(&format!(
-                        r#"<option value="{val}" {sel}>{label}</option>"#
-                    ));
+                    opts_html.push_str(&format!(r#"<option value="{val}" {sel}>{label}</option>"#));
                 }
                 format!(
                     r#"<select id="{input_id}" name="{name}" {required} class="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-xs text-zinc-200 focus:outline-none focus:border-zinc-600 transition-colors font-sans">{opts_html}</select>"#,
@@ -101,7 +106,11 @@ fn render_page_fields(form: &Form, values: Option<&HashMap<String, String>>) -> 
                 } else {
                     options.first().map(|(v, _)| v.as_str()).unwrap_or("")
                 };
-                let active_lbl = options.iter().find(|(v, _)| v == active_val).map(|(_, l)| l.as_str()).unwrap_or(active_val);
+                let active_lbl = options
+                    .iter()
+                    .find(|(v, _)| v == active_val)
+                    .map(|(_, l)| l.as_str())
+                    .unwrap_or(active_val);
 
                 let mut items_html = String::new();
                 for (val, label) in options {
@@ -208,12 +217,20 @@ fn render_page_fields(form: &Form, values: Option<&HashMap<String, String>>) -> 
                     input_id = input_id,
                     name = f.name,
                     current_val = current_val,
-                    placeholder = if placeholder.is_empty() { "Scan barcode or enter SKU..." } else { placeholder },
+                    placeholder = if placeholder.is_empty() {
+                        "Scan barcode or enter SKU..."
+                    } else {
+                        placeholder
+                    },
                     required = required
                 )
             }
             FieldType::Color => {
-                let color_val = if current_val.is_empty() { "#18181b" } else { current_val };
+                let color_val = if current_val.is_empty() {
+                    "#18181b"
+                } else {
+                    current_val
+                };
                 format!(
                     r##"<div class="flex items-center gap-2">
                         <input type="color" id="picker-{input_id}" value="{color_val}" onchange="document.getElementById('{input_id}').value = this.value" class="w-7 h-7 rounded border border-zinc-800 bg-zinc-950 cursor-pointer p-0.5 shrink-0" />

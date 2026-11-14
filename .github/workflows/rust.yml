@@ -2,36 +2,83 @@ name: Rust CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "master" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "master" ]
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  ci:
-    name: Check & Build
+  check:
+    name: Check, Test & Smoke Gate
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-      - name: Set up Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
 
-      - name: Rust Cache
-        uses: Swatinem/rust-cache@v2
+    - name: Cache Cargo registry and target directory
+      uses: Swatinem/rust-cache@v2
 
-      - name: Cargo Check
-        run: cargo check --verbose
+    - name: Fetch dependencies
+      run: cargo fetch --locked
 
-      - name: Cargo Clippy
-        run: cargo clippy --all-targets -- -D warnings
+    - name: Check formatting (rustfmt)
+      run: cargo fmt --all -- --check
 
-      - name: Cargo Build Examples
-        run: cargo build --examples --verbose
+    - name: Run Clippy (default features)
+      run: cargo clippy --all-targets -- -D warnings
 
-      - name: Cargo Test
-        run: cargo test --verbose
+    - name: Run Clippy (no default features)
+      run: cargo clippy --no-default-features --all-targets -- -D warnings
+
+    - name: Check individual Cargo features
+      env:
+        RUSTFLAGS: -D warnings
+      run: |
+        for feature in postgres mysql redis mongodb s3 oauth; do
+          echo "=== Checking feature: $feature ==="
+          cargo check --no-default-features --features "$feature" --all-targets
+        done
+
+    - name: Build documentation
+      env:
+        RUSTDOCFLAGS: -D warnings
+      run: cargo doc --no-deps
+
+    - name: Verify crate package file list
+      run: cargo package --allow-dirty --list
+
+    - name: Build examples
+      run: cargo build --examples
+
+    - name: Run test suite (default features)
+      run: cargo test --verbose
+
+    - name: Run test suite (no default features)
+      run: cargo test --no-default-features --verbose
+
+    - name: Smoke test cargo install, scaffolded app, and quickstart contract
+      run: |
+        INSTALL_ROOT="$RUNNER_TEMP/terminus-install"
+        SMOKE_WORK="$RUNNER_TEMP/terminus-smoke"
+        mkdir -p "$SMOKE_WORK"
+        cargo install --path . --locked --offline --root "$INSTALL_ROOT"
+        "$INSTALL_ROOT/bin/terminus" version
+
+        TERMINUS_EXPORT_SPEC="$SMOKE_WORK/app-spec.json" cargo run --quiet --example quickstart
+        "$INSTALL_ROOT/bin/terminus" schema --json --spec="$SMOKE_WORK/app-spec.json" > "$SMOKE_WORK/schema.json"
+        grep -q '"contract_version": "1.0"' "$SMOKE_WORK/schema.json"
+        grep -q '"authoritative_app_contract": true' "$SMOKE_WORK/schema.json"
+
+        cd "$SMOKE_WORK"
+        "$INSTALL_ROOT/bin/terminus" new smoke_app --preset=fullstack --db=sqlite --port=4123 --yes
+        cp "$GITHUB_WORKSPACE/Cargo.lock" smoke_app/Cargo.lock
+        printf '\n[workspace]\n\n[patch.crates-io]\nterminus-rs = { path = "%s" }\n' "$GITHUB_WORKSPACE" >> smoke_app/Cargo.toml
+        CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target/scaffold-checks" cargo check --offline --manifest-path smoke_app/Cargo.toml

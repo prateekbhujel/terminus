@@ -79,7 +79,10 @@ impl Column {
             label: crate::resource::headline(&name),
             name,
             column_type: ColumnType::Badge {
-                color_map: colors.into_iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+                color_map: colors
+                    .into_iter()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect(),
             },
             sortable: false,
             searchable: false,
@@ -161,10 +164,7 @@ impl Action {
 
     /// Prebuilt View Action
     pub fn view() -> Self {
-        Self::make("view")
-            .label("View")
-            .icon("eye")
-            .color("zinc")
+        Self::make("view").label("View").icon("eye").color("zinc")
     }
 
     /// Prebuilt Edit Action
@@ -183,7 +183,9 @@ impl Action {
             .color("rose")
             .requires_confirmation(true)
             .modal_heading("Delete Record")
-            .modal_description("Are you sure you want to delete this record? This action cannot be undone.")
+            .modal_description(
+                "Are you sure you want to delete this record? This action cannot be undone.",
+            )
     }
 
     /// Prebuilt Replicate Action (Duplicate record)
@@ -337,11 +339,18 @@ pub struct TableFilter {
 }
 
 impl TableFilter {
-    pub fn select(name: impl Into<String>, label: impl Into<String>, options: Vec<(&str, &str)>) -> Self {
+    pub fn select(
+        name: impl Into<String>,
+        label: impl Into<String>,
+        options: Vec<(&str, &str)>,
+    ) -> Self {
         Self {
             name: name.into(),
             label: label.into(),
-            options: options.into_iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            options: options
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
         }
     }
 }

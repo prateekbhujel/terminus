@@ -90,6 +90,12 @@ fn exercise_backend(db: &Database, kind: DatabaseKind, table: &str) {
 }
 
 #[test]
+fn sqlite_backend_roundtrip_and_migrations() {
+    let db = Database::memory().unwrap();
+    exercise_backend(&db, DatabaseKind::Sqlite, "terminus_backend_widgets");
+}
+
+#[test]
 fn typed_sql_values_roundtrip_across_sqlite() {
     let db = Database::memory().unwrap();
     db.execute(
@@ -150,10 +156,38 @@ fn typed_sql_values_roundtrip_across_sqlite() {
     assert!(err.contains("non-finite"), "unexpected error: {err}");
 }
 
+#[cfg(any(feature = "postgres", feature = "mysql"))]
+fn external_test_url(var: &str, service: &str) -> Option<String> {
+    if let Ok(url) = std::env::var(var) {
+        let trimmed = url.trim().to_string();
+        if !trimmed.is_empty() {
+            return Some(trimmed);
+        }
+    }
+    let required = std::env::var("TERMINUS_REQUIRE_EXTERNAL_TESTS")
+        .ok()
+        .map(|raw| {
+            let val = raw.trim().to_ascii_lowercase();
+            match val.as_str() {
+                "1" | "true" | "sql" => matches!(service, "postgres" | "mysql" | "redis"),
+                "all" => true,
+                _ => val.split(',').any(|item| item.trim() == service),
+            }
+        })
+        .unwrap_or(false);
+    if required {
+        panic!(
+            "{var} must be set when TERMINUS_REQUIRE_EXTERNAL_TESTS requires '{service}' (external-service tests must not silently skip)"
+        );
+    }
+    eprintln!("skipping: {var} not set");
+    None
+}
+
+#[cfg(feature = "postgres")]
 #[test]
 fn postgres_bound_parameters_cover_types_comments_and_reject_unsafe_coercions() {
-    let Ok(url) = std::env::var("TERMINUS_TEST_POSTGRES_URL") else {
-        eprintln!("skipping: TERMINUS_TEST_POSTGRES_URL not set");
+    let Some(url) = external_test_url("TERMINUS_TEST_POSTGRES_URL", "postgres") else {
         return;
     };
     let db = Database::connect(&url).unwrap();
@@ -424,10 +458,10 @@ async fn sql_query_bind_value_works_with_global_sqlite() {
     assert_eq!(rows[0]["qty"], "5");
 }
 
+#[cfg(feature = "postgres")]
 #[test]
 fn postgres_backend_roundtrip_and_migrations() {
-    let Ok(url) = std::env::var("TERMINUS_TEST_POSTGRES_URL") else {
-        eprintln!("skipping: TERMINUS_TEST_POSTGRES_URL not set");
+    let Some(url) = external_test_url("TERMINUS_TEST_POSTGRES_URL", "postgres") else {
         return;
     };
     let db = Database::connect(&url).unwrap();
@@ -449,10 +483,10 @@ fn postgres_backend_roundtrip_and_migrations() {
     exercise_backend(&db, DatabaseKind::Postgres, "terminus_backend_widgets");
 }
 
+#[cfg(feature = "mysql")]
 #[test]
 fn mysql_backend_roundtrip_and_migrations() {
-    let Ok(url) = std::env::var("TERMINUS_TEST_MYSQL_URL") else {
-        eprintln!("skipping: TERMINUS_TEST_MYSQL_URL not set");
+    let Some(url) = external_test_url("TERMINUS_TEST_MYSQL_URL", "mysql") else {
         return;
     };
     let db = Database::connect(&url).unwrap();

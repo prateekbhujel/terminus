@@ -14,10 +14,7 @@ pub struct SearchHit {
 }
 
 fn valid_identifier(name: &str) -> bool {
-    !name.is_empty()
-        && name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_')
+    !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 /// Search `table` for `query` across `columns` (case-insensitive contains),
@@ -30,7 +27,10 @@ pub fn search_database(
     query: &str,
     limit: usize,
 ) -> Result<Vec<SearchHit>, String> {
-    if !valid_identifier(table) || columns.is_empty() || !columns.iter().all(|c| valid_identifier(c)) {
+    if !valid_identifier(table)
+        || columns.is_empty()
+        || !columns.iter().all(|c| valid_identifier(c))
+    {
         return Err("Invalid search table or column identifier".into());
     }
     let query = query.trim().to_lowercase();
@@ -45,9 +45,7 @@ pub fn search_database(
         .collect::<Vec<_>>()
         .join(" OR ");
     let column_list = columns.join(", ");
-    let sql = format!(
-        "SELECT id, {column_list} FROM {table} WHERE {conditions} LIMIT 500"
-    );
+    let sql = format!("SELECT id, {column_list} FROM {table} WHERE {conditions} LIMIT 500");
     let pattern = format!("%{query}%");
     let rows = db.query_params(&sql, &[pattern])?;
 

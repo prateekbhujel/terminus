@@ -88,6 +88,8 @@ impl MongoStore {
 fn to_document(value: serde_json::Value) -> Document {
     match mongodb::bson::to_document(&value) {
         Ok(document) => document,
-        Err(_) => doc! { "value": mongodb::bson::to_bson(&value).unwrap_or(mongodb::bson::Bson::Null) },
+        Err(_) => {
+            doc! { "value": mongodb::bson::to_bson(&value).unwrap_or(mongodb::bson::Bson::Null) }
+        }
     }
 }

@@ -360,10 +360,8 @@ impl App {
             }
         }
         if let Some(res) = module.resource() {
-            self.spec.add_resource(resource_spec_from_resource(
-                res.as_ref(),
-                res.slug(),
-            ));
+            self.spec
+                .add_resource(resource_spec_from_resource(res.as_ref(), res.slug()));
         }
         self.router = if slug == "/" {
             self.router.merge(module.routes())
@@ -436,7 +434,10 @@ impl App {
                 rate_limit_middleware,
             ));
         }
-        r.layer(axum::middleware::from_fn_with_state(self.session_config, request_context))
+        r.layer(axum::middleware::from_fn_with_state(
+            self.session_config,
+            request_context,
+        ))
     }
 
     /// Start the server and listen on the configured interface with graceful shutdown.
@@ -466,9 +467,12 @@ impl App {
         let router = self.build();
         let listener = tokio::net::TcpListener::bind(addr).await?;
         // Preserve the real TCP peer for proxy-aware rate limiting.
-        axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>())
-            .with_graceful_shutdown(shutdown_signal())
-            .await?;
+        axum::serve(
+            listener,
+            router.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
         Ok(())
     }
 }
@@ -504,17 +508,26 @@ fn spec_export_target_from_process() -> Option<String> {
 }
 
 async fn request_context(
-    axum::extract::State(session_config): axum::extract::State<Option<crate::session::SessionConfig>>,
+    axum::extract::State(session_config): axum::extract::State<
+        Option<crate::session::SessionConfig>,
+    >,
     request: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> Response {
-    if crate::helpers::has_request_context() { return next.run(request).await; }
-    let cookie = request.headers().get(axum::http::header::COOKIE).and_then(|value| value.to_str().ok());
+    if crate::helpers::has_request_context() {
+        return next.run(request).await;
+    }
+    let cookie = request
+        .headers()
+        .get(axum::http::header::COOKIE)
+        .and_then(|value| value.to_str().ok());
     if let Some(config) = &session_config {
         if config.cookie_id(cookie).is_err() {
             return (StatusCode::BAD_REQUEST, "Invalid session cookie").into_response();
         }
-    } else if let Some(key) = crate::helpers::config("app.key").or_else(|| crate::helpers::env("APP_KEY")) {
+    } else if let Some(key) =
+        crate::helpers::config("app.key").or_else(|| crate::helpers::env("APP_KEY"))
+    {
         if let Some(value) = crate::session::session_cookie_value(cookie) {
             if crate::session::Session::verify_signed_cookie(value, key.as_bytes()).is_none() {
                 return (StatusCode::BAD_REQUEST, "Invalid session cookie").into_response();
@@ -522,19 +535,33 @@ async fn request_context(
         }
     }
     let info = crate::helpers::RequestInfo::from_headers(
-        request.method().as_str(), request.uri().path(), request.headers(),
+        request.method().as_str(),
+        request.uri().path(),
+        request.headers(),
     );
-    let (mut response, session, error) = crate::helpers::with_request_context(info, session_config.clone(), next.run(request)).await;
+    let (mut response, session, error) =
+        crate::helpers::with_request_context(info, session_config.clone(), next.run(request)).await;
     if let Some(error) = error {
         tracing::error!(error = %error, "Session lookup failed");
-        return (StatusCode::INTERNAL_SERVER_ERROR, "Session storage unavailable").into_response();
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Session storage unavailable",
+        )
+            .into_response();
     }
-    let has_session_cookie = response.headers().get_all(axum::http::header::SET_COOKIE).iter()
+    let has_session_cookie = response
+        .headers()
+        .get_all(axum::http::header::SET_COOKIE)
+        .iter()
         .filter_map(|value| value.to_str().ok())
         .any(|value| value.trim_start().starts_with("terminus_session="));
     if let Some(session) = session {
-        if session.is_invalidated() { return response; }
-        let store = session_config.as_ref().map(|config| config.store.clone())
+        if session.is_invalidated() {
+            return response;
+        }
+        let store = session_config
+            .as_ref()
+            .map(|config| config.store.clone())
             .unwrap_or_else(crate::session::SessionStore::global_arc);
         let result = match &session_config {
             Some(config) => store.save_with_ttl(&session, config.ttl_seconds),
@@ -542,16 +569,29 @@ async fn request_context(
         };
         if let Err(error) = result {
             tracing::error!(error = %error, "Session persistence failed");
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Session storage unavailable").into_response();
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Session storage unavailable",
+            )
+                .into_response();
         }
         if !has_session_cookie {
-            let cookie = session_config.as_ref().map(|config| config.cookie_header(&session)).unwrap_or_else(|| {
-                if let Some(key) = crate::helpers::config("app.key").or_else(|| crate::helpers::env("APP_KEY")) {
-                    session.signed_cookie_header(key.as_bytes())
-                } else { session.cookie_header() }
-            });
+            let cookie = session_config
+                .as_ref()
+                .map(|config| config.cookie_header(&session))
+                .unwrap_or_else(|| {
+                    if let Some(key) =
+                        crate::helpers::config("app.key").or_else(|| crate::helpers::env("APP_KEY"))
+                    {
+                        session.signed_cookie_header(key.as_bytes())
+                    } else {
+                        session.cookie_header()
+                    }
+                });
             if let Ok(cookie) = cookie.parse() {
-                response.headers_mut().append(axum::http::header::SET_COOKIE, cookie);
+                response
+                    .headers_mut()
+                    .append(axum::http::header::SET_COOKIE, cookie);
             }
         }
     }
@@ -603,7 +643,11 @@ async fn rate_limit_middleware(
     if limiter.hit(&key) {
         next.run(request).await
     } else {
-        (axum::http::StatusCode::TOO_MANY_REQUESTS, "Too Many Requests").into_response()
+        (
+            axum::http::StatusCode::TOO_MANY_REQUESTS,
+            "Too Many Requests",
+        )
+            .into_response()
     }
 }
 
@@ -663,16 +707,56 @@ fn record_panel_spec(spec: &mut crate::spec::AppSpec, panel: &crate::panel::Admi
         ("GET", "/admin/dashboard", "panel::dashboard_page", true),
         ("GET", "/admin/ws", "panel::ws_handler", true),
         ("GET", "/admin/:slug", "panel::resource_page", true),
-        ("GET", "/admin/:slug/table", "panel::resource_table_partial", true),
+        (
+            "GET",
+            "/admin/:slug/table",
+            "panel::resource_table_partial",
+            true,
+        ),
         ("GET", "/admin/:slug/api", "panel::resource_json_api", true),
-        ("GET", "/admin/:slug/create", "panel::resource_create_page", true),
-        ("POST", "/admin/:slug/create", "panel::resource_create", true),
-        ("GET", "/admin/:slug/edit/:id", "panel::resource_edit_page", true),
-        ("POST", "/admin/:slug/edit/:id", "panel::resource_update", true),
-        ("POST", "/admin/:slug/delete/:id", "panel::resource_delete", true),
+        (
+            "GET",
+            "/admin/:slug/create",
+            "panel::resource_create_page",
+            true,
+        ),
+        (
+            "POST",
+            "/admin/:slug/create",
+            "panel::resource_create",
+            true,
+        ),
+        (
+            "GET",
+            "/admin/:slug/edit/:id",
+            "panel::resource_edit_page",
+            true,
+        ),
+        (
+            "POST",
+            "/admin/:slug/edit/:id",
+            "panel::resource_update",
+            true,
+        ),
+        (
+            "POST",
+            "/admin/:slug/delete/:id",
+            "panel::resource_delete",
+            true,
+        ),
         ("GET", "/admin/:slug/export", "panel::resource_export", true),
-        ("POST", "/admin/:slug/action/:action_id/:id", "panel::resource_action", true),
-        ("POST", "/admin/:slug/bulk-action/:action_id", "panel::resource_bulk_action", true),
+        (
+            "POST",
+            "/admin/:slug/action/:action_id/:id",
+            "panel::resource_action",
+            true,
+        ),
+        (
+            "POST",
+            "/admin/:slug/bulk-action/:action_id",
+            "panel::resource_bulk_action",
+            true,
+        ),
     ];
 
     for (method, path, handler, auth_required) in PANEL_ROUTES {

@@ -3,10 +3,10 @@
 //! Provides in-memory job queues (`JobQueue`) and persistent SQLite-backed job queues (`SqliteJobQueue`)
 //! with automatic retries, exponential backoff, worker loops, and failure telemetry.
 
+use chrono::Utc;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use chrono::Utc;
 
 /// Trait for executable background tasks
 pub trait Job: Send + Sync {
@@ -318,7 +318,6 @@ impl SqliteJobQueue {
     }
 
     fn init_table(&self) -> Result<(), String> {
-        use crate::backend::DatabaseKind;
         match &self.conn {
             crate::backend::AnyConnection::Sqlite(conn) => {
                 let conn = conn.lock().unwrap();
@@ -366,7 +365,9 @@ impl SqliteJobQueue {
                 }
                 Ok(())
             }
+            #[cfg(any(feature = "postgres", feature = "mysql"))]
             _ => {
+                use crate::backend::DatabaseKind;
                 let ddl = match self.conn.kind() {
                     DatabaseKind::Postgres => {
                         "CREATE TABLE IF NOT EXISTS _terminus_jobs (
@@ -449,7 +450,9 @@ impl SqliteJobQueue {
                     ph(4),
                     ph(5)
                 );
-                self.conn.execute_values(&sql, &params).map_err(queue_error)?;
+                self.conn
+                    .execute_values(&sql, &params)
+                    .map_err(queue_error)?;
                 let last_id_sql = match kind {
                     DatabaseKind::Mysql => "SELECT LAST_INSERT_ID() AS id",
                     _ => "SELECT last_insert_rowid() AS id",
@@ -474,92 +477,93 @@ impl SqliteJobQueue {
         let ph = |i: usize| kind.placeholder(i);
         let mut guard = self.conn.lock();
         guard.begin()?;
-        let work = (|guard: &mut crate::backend::AnyGuard<'_>| -> Result<Option<ClaimedJob>, String> {
-            let now = Utc::now();
-            let now_rfc = now.to_rfc3339();
-            let now_ms = now.timestamp_millis();
+        let work =
+            (|guard: &mut crate::backend::AnyGuard<'_>| -> Result<Option<ClaimedJob>, String> {
+                let now = Utc::now();
+                let now_rfc = now.to_rfc3339();
+                let now_ms = now.timestamp_millis();
 
-            // Expired claims that used their final attempt fail permanently
-            // instead of being reclaimed forever.
-            let reap_sql = format!(
-                "UPDATE _terminus_jobs
+                // Expired claims that used their final attempt fail permanently
+                // instead of being reclaimed forever.
+                let reap_sql = format!(
+                    "UPDATE _terminus_jobs
                  SET status = 'failed',
                      error = COALESCE(error, 'Lease expired after the final attempt'),
                      claimed_by = NULL, lease_expires_at = NULL
                  WHERE status = 'processing' AND lease_expires_at IS NOT NULL
                    AND lease_expires_at <= {} AND attempts >= max_attempts",
-                ph(1)
-            );
-            guard.execute_values(&reap_sql, &[crate::backend::SqlValue::Int(now_ms)])?;
+                    ph(1)
+                );
+                guard.execute_values(&reap_sql, &[crate::backend::SqlValue::Int(now_ms)])?;
 
-            let candidate_sql = format!(
-                "SELECT id, name, payload, attempts, max_attempts FROM _terminus_jobs
+                let candidate_sql = format!(
+                    "SELECT id, name, payload, attempts, max_attempts FROM _terminus_jobs
                  WHERE (status = 'pending' AND available_at <= {})
                     OR (status = 'processing' AND lease_expires_at IS NOT NULL
                         AND lease_expires_at <= {} AND attempts < max_attempts)
                  ORDER BY id ASC LIMIT 1",
-                ph(1),
-                ph(2)
-            );
-            let candidates = guard.query_values(
-                &candidate_sql,
-                &[
-                    crate::backend::SqlValue::Text(now_rfc),
-                    crate::backend::SqlValue::Int(now_ms),
-                ],
-            )?;
-            let Some(row) = candidates.into_iter().next() else {
-                return Ok(None);
-            };
-            let parse = |key: &str| -> Result<i64, String> {
-                row.get(key)
-                    .and_then(|value| value.parse::<i64>().ok())
-                    .ok_or_else(|| format!("Malformed queue row: invalid {key}"))
-            };
-            let id = parse("id")?;
-            let attempts = parse("attempts")? as u32;
-            let max_attempts = parse("max_attempts")? as u32;
-            let name = row.get("name").cloned().unwrap_or_default();
-            let payload = row.get("payload").cloned().unwrap_or_default();
+                    ph(1),
+                    ph(2)
+                );
+                let candidates = guard.query_values(
+                    &candidate_sql,
+                    &[
+                        crate::backend::SqlValue::Text(now_rfc),
+                        crate::backend::SqlValue::Int(now_ms),
+                    ],
+                )?;
+                let Some(row) = candidates.into_iter().next() else {
+                    return Ok(None);
+                };
+                let parse = |key: &str| -> Result<i64, String> {
+                    row.get(key)
+                        .and_then(|value| value.parse::<i64>().ok())
+                        .ok_or_else(|| format!("Malformed queue row: invalid {key}"))
+                };
+                let id = parse("id")?;
+                let attempts = parse("attempts")? as u32;
+                let max_attempts = parse("max_attempts")? as u32;
+                let name = row.get("name").cloned().unwrap_or_default();
+                let payload = row.get("payload").cloned().unwrap_or_default();
 
-            let claim_token = crate::session::secure_random_hex(16);
-            let lease_expires_at = now_ms + self.lease.as_millis() as i64;
-            let claim_sql = format!(
-                "UPDATE _terminus_jobs
+                let claim_token = crate::session::secure_random_hex(16);
+                let lease_expires_at = now_ms + self.lease.as_millis() as i64;
+                let claim_sql = format!(
+                    "UPDATE _terminus_jobs
                  SET status = 'processing', claimed_by = {}, lease_expires_at = {},
                      attempts = attempts + 1
                  WHERE id = {}
                    AND (status = 'pending'
                         OR (status = 'processing' AND lease_expires_at <= {}))",
-                ph(1),
-                ph(2),
-                ph(3),
-                ph(4)
-            );
-            let changed = guard.execute_values(
-                &claim_sql,
-                &[
-                    crate::backend::SqlValue::Text(claim_token.clone()),
-                    crate::backend::SqlValue::Int(lease_expires_at),
-                    crate::backend::SqlValue::Int(id),
-                    crate::backend::SqlValue::Int(now_ms),
-                ],
-            )?;
-            if changed != 1 {
-                // Lost a race against another connection; report no claim rather
-                // than running a job this worker does not own.
-                return Ok(None);
-            }
-            Ok(Some(ClaimedJob {
-                conn: self.conn.clone(),
-                claim_token,
-                id,
-                name,
-                payload,
-                attempts: attempts + 1,
-                max_attempts,
-            }))
-        })(&mut guard);
+                    ph(1),
+                    ph(2),
+                    ph(3),
+                    ph(4)
+                );
+                let changed = guard.execute_values(
+                    &claim_sql,
+                    &[
+                        crate::backend::SqlValue::Text(claim_token.clone()),
+                        crate::backend::SqlValue::Int(lease_expires_at),
+                        crate::backend::SqlValue::Int(id),
+                        crate::backend::SqlValue::Int(now_ms),
+                    ],
+                )?;
+                if changed != 1 {
+                    // Lost a race against another connection; report no claim rather
+                    // than running a job this worker does not own.
+                    return Ok(None);
+                }
+                Ok(Some(ClaimedJob {
+                    conn: self.conn.clone(),
+                    claim_token,
+                    id,
+                    name,
+                    payload,
+                    attempts: attempts + 1,
+                    max_attempts,
+                }))
+            })(&mut guard);
         match work {
             Ok(claim) => {
                 guard.commit()?;

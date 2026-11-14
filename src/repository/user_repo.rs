@@ -1,13 +1,20 @@
-use std::sync::{Arc, RwLock};
 use crate::domain::{Role, User, UserStatus};
 use crate::resource::QueryState;
+use std::sync::{Arc, RwLock};
 
 pub trait UserRepository: Send + Sync {
     fn list(&self, query: &QueryState) -> (Vec<User>, usize);
     fn find_by_id(&self, id: &str) -> Option<User>;
     fn find_by_email(&self, email: &str) -> Option<User>;
     fn save(&self, user: User) -> Result<String, String>;
-    fn update(&self, id: &str, name: String, email: String, role: Role, status: UserStatus) -> Result<(), String>;
+    fn update(
+        &self,
+        id: &str,
+        name: String,
+        email: String,
+        role: Role,
+        status: UserStatus,
+    ) -> Result<(), String>;
     fn delete(&self, id: &str) -> Result<(), String>;
 }
 
@@ -140,18 +147,30 @@ impl UserRepository for InMemoryUserRepository {
         if let Some(ref sort_col) = query.sort_by {
             list.sort_by(|a, b| {
                 let cmp = match sort_col.as_str() {
-                    "id" => a.id.parse::<usize>().unwrap_or(0).cmp(&b.id.parse::<usize>().unwrap_or(0)),
+                    "id" => {
+                        a.id.parse::<usize>()
+                            .unwrap_or(0)
+                            .cmp(&b.id.parse::<usize>().unwrap_or(0))
+                    }
                     "name" => a.name.cmp(&b.name),
                     "created_at" => a.created_at.cmp(&b.created_at),
                     _ => std::cmp::Ordering::Equal,
                 };
-                if query.sort_desc { cmp.reverse() } else { cmp }
+                if query.sort_desc {
+                    cmp.reverse()
+                } else {
+                    cmp
+                }
             });
         }
 
         let total = list.len();
         let page = if query.page == 0 { 1 } else { query.page };
-        let per_page = if query.per_page == 0 { 8 } else { query.per_page };
+        let per_page = if query.per_page == 0 {
+            8
+        } else {
+            query.per_page
+        };
         let skip = (page - 1) * per_page;
 
         let paginated = list.into_iter().skip(skip).take(per_page).collect();
@@ -165,7 +184,10 @@ impl UserRepository for InMemoryUserRepository {
 
     fn find_by_email(&self, email: &str) -> Option<User> {
         let store = self.storage.read().unwrap();
-        store.iter().find(|u| u.email.eq_ignore_ascii_case(email)).cloned()
+        store
+            .iter()
+            .find(|u| u.email.eq_ignore_ascii_case(email))
+            .cloned()
     }
 
     fn save(&self, user: User) -> Result<String, String> {
@@ -175,7 +197,14 @@ impl UserRepository for InMemoryUserRepository {
         Ok(id)
     }
 
-    fn update(&self, id: &str, name: String, email: String, role: Role, status: UserStatus) -> Result<(), String> {
+    fn update(
+        &self,
+        id: &str,
+        name: String,
+        email: String,
+        role: Role,
+        status: UserStatus,
+    ) -> Result<(), String> {
         let mut store = self.storage.write().unwrap();
         if let Some(u) = store.iter_mut().find(|u| u.id == id) {
             u.name = name;

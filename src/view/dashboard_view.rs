@@ -17,7 +17,11 @@ pub fn render_dashboard(
     } else {
         for log in recent_audits.iter().take(5) {
             let (badge_bg, badge_text, badge_border) = match log.action.as_str() {
-                "CREATE" => ("bg-emerald-500/10", "text-emerald-400", "border-emerald-500/20"),
+                "CREATE" => (
+                    "bg-emerald-500/10",
+                    "text-emerald-400",
+                    "border-emerald-500/20",
+                ),
                 "UPDATE" => ("bg-blue-500/10", "text-blue-400", "border-blue-500/20"),
                 "DELETE" => ("bg-rose-500/10", "text-rose-400", "border-rose-500/20"),
                 _ => ("bg-zinc-800", "text-zinc-400", "border-zinc-700"),

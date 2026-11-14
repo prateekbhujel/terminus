@@ -46,7 +46,11 @@ fn insert_id(db: &Database, sql: &str, params: &[String]) -> Result<String, Stri
 }
 
 fn paginate(query: &QueryState) -> (usize, usize) {
-    let per_page = if query.per_page == 0 { 8 } else { query.per_page };
+    let per_page = if query.per_page == 0 {
+        8
+    } else {
+        query.per_page
+    };
     let page = if query.page == 0 { 1 } else { query.page };
     (per_page, (page - 1) * per_page)
 }
@@ -223,9 +227,7 @@ impl OrderRepository for DatabaseOrderRepository {
         } else {
             let ph = kind.placeholder(1);
             (
-                format!(
-                    " WHERE LOWER(customer) LIKE {ph} OR LOWER(status) LIKE {ph}"
-                ),
+                format!(" WHERE LOWER(customer) LIKE {ph} OR LOWER(status) LIKE {ph}"),
                 vec![format!("%{}%", query.search.to_lowercase())],
             )
         };

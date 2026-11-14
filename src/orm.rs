@@ -9,8 +9,12 @@ use std::sync::{Arc, Mutex, OnceLock, RwLock};
 /// Active Record Model trait
 pub trait Model: Sized + Clone + Serialize + for<'de> Deserialize<'de> {
     fn table_name() -> &'static str;
-    fn primary_key() -> &'static str { "id" }
-    fn has_timestamps() -> bool { true }
+    fn primary_key() -> &'static str {
+        "id"
+    }
+    fn has_timestamps() -> bool {
+        true
+    }
 
     fn get_id(&self) -> Option<&str>;
     fn set_id(&mut self, id: String);
@@ -28,10 +32,17 @@ pub trait Model: Sized + Clone + Serialize + for<'de> Deserialize<'de> {
     }
 
     /// Find a record by its primary key or return HTTP 404 Not Found error
-    fn find_or_fail(id: &str, conn: &rusqlite::Connection) -> Result<Self, crate::helpers::AbortError> {
+    fn find_or_fail(
+        id: &str,
+        conn: &rusqlite::Connection,
+    ) -> Result<Self, crate::helpers::AbortError> {
         match Self::find(id, conn) {
             Ok(Some(model)) => Ok(model),
-            Ok(None) => Err(crate::helpers::AbortError::not_found(format!("Record in '{}' with key '{}' not found", Self::table_name(), id))),
+            Ok(None) => Err(crate::helpers::AbortError::not_found(format!(
+                "Record in '{}' with key '{}' not found",
+                Self::table_name(),
+                id
+            ))),
             Err(e) => Err(crate::helpers::AbortError::server_error(e)),
         }
     }
@@ -42,18 +53,28 @@ pub trait Model: Sized + Clone + Serialize + for<'de> Deserialize<'de> {
     }
 
     /// Create and persist a new model instance
-    fn create(attributes: HashMap<&str, &str>, conn: &rusqlite::Connection) -> Result<Self, String> {
+    fn create(
+        attributes: HashMap<&str, &str>,
+        conn: &rusqlite::Connection,
+    ) -> Result<Self, String> {
         let mut string_map = HashMap::new();
         for (k, v) in attributes {
             string_map.insert(k.to_string(), v.to_string());
         }
         let now = chrono::Utc::now().to_rfc3339();
         if Self::has_timestamps() {
-            string_map.entry("created_at".to_string()).or_insert_with(|| now.clone());
-            string_map.entry("updated_at".to_string()).or_insert_with(|| now);
+            string_map
+                .entry("created_at".to_string())
+                .or_insert_with(|| now.clone());
+            string_map
+                .entry("updated_at".to_string())
+                .or_insert_with(|| now);
         }
         if !string_map.contains_key(Self::primary_key()) {
-            let auto_id = format!("{:x}", chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0));
+            let auto_id = format!(
+                "{:x}",
+                chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
+            );
             string_map.insert(Self::primary_key().to_string(), auto_id);
         }
 
@@ -95,11 +116,18 @@ pub trait Model: Sized + Clone + Serialize + for<'de> Deserialize<'de> {
                 values.push(chrono::Utc::now().to_rfc3339());
             }
 
-            let sql = format!("UPDATE {} SET {} WHERE {} = ?", table, set_clauses.join(", "), pk);
+            let sql = format!(
+                "UPDATE {} SET {} WHERE {} = ?",
+                table,
+                set_clauses.join(", "),
+                pk
+            );
             values.push(pk_val.to_string());
 
-            let params: Vec<&dyn rusqlite::ToSql> = values.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
-            conn.execute(&sql, params.as_slice()).map_err(|e| e.to_string())?;
+            let params: Vec<&dyn rusqlite::ToSql> =
+                values.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
+            conn.execute(&sql, params.as_slice())
+                .map_err(|e| e.to_string())?;
         } else {
             // INSERT
             let mut cols = Vec::new();
@@ -119,8 +147,10 @@ pub trait Model: Sized + Clone + Serialize + for<'de> Deserialize<'de> {
                 placeholders.join(", ")
             );
 
-            let params: Vec<&dyn rusqlite::ToSql> = values.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
-            conn.execute(&sql, params.as_slice()).map_err(|e| e.to_string())?;
+            let params: Vec<&dyn rusqlite::ToSql> =
+                values.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
+            conn.execute(&sql, params.as_slice())
+                .map_err(|e| e.to_string())?;
         }
 
         Ok(())
@@ -133,7 +163,8 @@ pub trait Model: Sized + Clone + Serialize + for<'de> Deserialize<'de> {
             return Err("Cannot delete model without primary key".into());
         };
         let sql = format!("DELETE FROM {} WHERE {} = ?1", Self::table_name(), pk);
-        conn.execute(&sql, rusqlite::params![id]).map_err(|e| e.to_string())?;
+        conn.execute(&sql, rusqlite::params![id])
+            .map_err(|e| e.to_string())?;
         Ok(())
     }
 }
@@ -184,7 +215,10 @@ impl DynamicModel {
         let pk_val = self.get(&self.primary_key).map(String::from);
         let exists = if let Some(ref id) = pk_val {
             conn.query_row(
-                &format!("SELECT COUNT(1) FROM {} WHERE {} = ?1", self.table, self.primary_key),
+                &format!(
+                    "SELECT COUNT(1) FROM {} WHERE {} = ?1",
+                    self.table, self.primary_key
+                ),
                 rusqlite::params![id],
                 |r| r.get::<_, usize>(0),
             )
@@ -210,16 +244,33 @@ impl DynamicModel {
             set_clauses.push("updated_at = ?".to_string());
             values.push(now.clone());
 
-            let sql = format!("UPDATE {} SET {} WHERE {} = ?", self.table, set_clauses.join(", "), self.primary_key);
+            let sql = format!(
+                "UPDATE {} SET {} WHERE {} = ?",
+                self.table,
+                set_clauses.join(", "),
+                self.primary_key
+            );
             values.push(id);
 
-            let params: Vec<&dyn rusqlite::ToSql> = values.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
-            conn.execute(&sql, params.as_slice()).map_err(|e| e.to_string())?;
+            let params: Vec<&dyn rusqlite::ToSql> =
+                values.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
+            conn.execute(&sql, params.as_slice())
+                .map_err(|e| e.to_string())?;
         } else {
-            let auto_id = pk_val.unwrap_or_else(|| format!("{:x}", chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)));
-            self.attributes.insert(self.primary_key.clone(), auto_id.clone());
-            self.attributes.entry("created_at".to_string()).or_insert_with(|| now.clone());
-            self.attributes.entry("updated_at".to_string()).or_insert_with(|| now.clone());
+            let auto_id = pk_val.unwrap_or_else(|| {
+                format!(
+                    "{:x}",
+                    chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
+                )
+            });
+            self.attributes
+                .insert(self.primary_key.clone(), auto_id.clone());
+            self.attributes
+                .entry("created_at".to_string())
+                .or_insert_with(|| now.clone());
+            self.attributes
+                .entry("updated_at".to_string())
+                .or_insert_with(|| now.clone());
 
             let mut cols = Vec::new();
             let mut placeholders = Vec::new();
@@ -238,8 +289,10 @@ impl DynamicModel {
                 placeholders.join(", ")
             );
 
-            let params: Vec<&dyn rusqlite::ToSql> = values.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
-            conn.execute(&sql, params.as_slice()).map_err(|e| e.to_string())?;
+            let params: Vec<&dyn rusqlite::ToSql> =
+                values.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
+            conn.execute(&sql, params.as_slice())
+                .map_err(|e| e.to_string())?;
         }
 
         self.original = self.attributes.clone();
@@ -251,7 +304,8 @@ impl DynamicModel {
             return Err("Model has no primary key to delete".into());
         };
         let sql = format!("DELETE FROM {} WHERE {} = ?1", self.table, self.primary_key);
-        conn.execute(&sql, rusqlite::params![id]).map_err(|e| e.to_string())?;
+        conn.execute(&sql, rusqlite::params![id])
+            .map_err(|e| e.to_string())?;
         Ok(())
     }
 }
@@ -298,7 +352,8 @@ impl<M: Model> ModelQuery<M> {
     }
 
     pub fn where_like(mut self, col: impl Into<String>, pattern: impl Into<String>) -> Self {
-        self.wheres.push((col.into(), "LIKE".to_string(), pattern.into()));
+        self.wheres
+            .push((col.into(), "LIKE".to_string(), pattern.into()));
         self
     }
 
@@ -354,16 +409,19 @@ impl<M: Model> ModelQuery<M> {
         let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
 
         let col_names: Vec<String> = stmt.column_names().into_iter().map(String::from).collect();
-        let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
+        let param_refs: Vec<&dyn rusqlite::ToSql> =
+            params.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
 
-        let rows = stmt.query_map(param_refs.as_slice(), |row| {
-            let mut map = HashMap::new();
-            for (i, name) in col_names.iter().enumerate() {
-                let val_str: String = row.get(i).unwrap_or_default();
-                map.insert(name.clone(), val_str);
-            }
-            Ok(M::from_map(map))
-        }).map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(param_refs.as_slice(), |row| {
+                let mut map = HashMap::new();
+                for (i, name) in col_names.iter().enumerate() {
+                    let val_str: String = row.get(i).unwrap_or_default();
+                    map.insert(name.clone(), val_str);
+                }
+                Ok(M::from_map(map))
+            })
+            .map_err(|e| e.to_string())?;
 
         let mut models = Vec::new();
         for m in rows.flatten() {
@@ -401,7 +459,8 @@ impl<M: Model> ModelQuery<M> {
             sql.push_str(&format!(" WHERE {}", clauses.join(" AND ")));
         }
 
-        let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
+        let param_refs: Vec<&dyn rusqlite::ToSql> =
+            params.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
         let count: usize = conn
             .query_row(&sql, param_refs.as_slice(), |r| r.get(0))
             .map_err(|e| e.to_string())?;
@@ -426,8 +485,11 @@ impl<M: Model> ModelQuery<M> {
             sql.push_str(&format!(" WHERE {}", clauses.join(" AND ")));
         }
 
-        let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
-        let count = conn.execute(&sql, param_refs.as_slice()).map_err(|e| e.to_string())?;
+        let param_refs: Vec<&dyn rusqlite::ToSql> =
+            params.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
+        let count = conn
+            .execute(&sql, param_refs.as_slice())
+            .map_err(|e| e.to_string())?;
         Ok(count)
     }
 }
@@ -456,17 +518,26 @@ impl<Child: Model> HasMany<Child> {
 
     /// Retrieve all related child models
     pub fn get(&self, conn: &rusqlite::Connection) -> Result<Vec<Child>, String> {
-        Child::query().where_eq(&self.foreign_key, &self.parent_id).get(conn)
+        Child::query()
+            .where_eq(&self.foreign_key, &self.parent_id)
+            .get(conn)
     }
 
     /// Create and persist a child model with the parent foreign key pre-assigned
-    pub fn create(&self, attributes: HashMap<&str, &str>, conn: &rusqlite::Connection) -> Result<Child, String> {
+    pub fn create(
+        &self,
+        attributes: HashMap<&str, &str>,
+        conn: &rusqlite::Connection,
+    ) -> Result<Child, String> {
         let mut string_map = HashMap::new();
         for (k, v) in attributes {
             string_map.insert(k.to_string(), v.to_string());
         }
         string_map.insert(self.foreign_key.clone(), self.parent_id.clone());
-        let str_ref_map: HashMap<&str, &str> = string_map.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        let str_ref_map: HashMap<&str, &str> = string_map
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
         Child::create(str_ref_map, conn)
     }
 }
@@ -489,7 +560,9 @@ impl<Parent: Model> BelongsTo<Parent> {
 
     /// Retrieve the related parent model
     pub fn get(&self, conn: &rusqlite::Connection) -> Result<Option<Parent>, String> {
-        Parent::query().where_eq(&self.owner_key, &self.foreign_key_val).first(conn)
+        Parent::query()
+            .where_eq(&self.owner_key, &self.foreign_key_val)
+            .first(conn)
     }
 }
 
@@ -533,22 +606,26 @@ impl Blueprint {
     }
 
     pub fn integer(&mut self, col: &str) -> &mut Self {
-        self.columns.push(format!("{} INTEGER NOT NULL DEFAULT 0", col));
+        self.columns
+            .push(format!("{} INTEGER NOT NULL DEFAULT 0", col));
         self
     }
 
     pub fn boolean(&mut self, col: &str) -> &mut Self {
-        self.columns.push(format!("{} INTEGER NOT NULL DEFAULT 0", col));
+        self.columns
+            .push(format!("{} INTEGER NOT NULL DEFAULT 0", col));
         self
     }
 
     pub fn float(&mut self, col: &str) -> &mut Self {
-        self.columns.push(format!("{} REAL NOT NULL DEFAULT 0.0", col));
+        self.columns
+            .push(format!("{} REAL NOT NULL DEFAULT 0.0", col));
         self
     }
 
     pub fn decimal(&mut self, col: &str) -> &mut Self {
-        self.columns.push(format!("{} REAL NOT NULL DEFAULT 0.0", col));
+        self.columns
+            .push(format!("{} REAL NOT NULL DEFAULT 0.0", col));
         self
     }
 
@@ -558,7 +635,8 @@ impl Blueprint {
     }
 
     pub fn json(&mut self, col: &str) -> &mut Self {
-        self.columns.push(format!("{} TEXT NOT NULL DEFAULT '{{}}'", col));
+        self.columns
+            .push(format!("{} TEXT NOT NULL DEFAULT '{{}}'", col));
         self
     }
 
@@ -570,7 +648,11 @@ impl Blueprint {
 
     /// Compile Blueprint schema definition into SQL dialect for SQLite
     pub fn to_sql(&self) -> String {
-        format!("CREATE TABLE IF NOT EXISTS {} ({});", self.table_name, self.columns.join(", "))
+        format!(
+            "CREATE TABLE IF NOT EXISTS {} ({});",
+            self.table_name,
+            self.columns.join(", ")
+        )
     }
 }
 
@@ -716,8 +798,11 @@ impl SqlQuery {
                 .execute(&self.raw_sql, rusqlite::params_from_iter(values.iter()))
                 .map_err(|e| e.to_string());
         }
-        conn.execute(&self.raw_sql, rusqlite::params_from_iter(self.bindings.iter()))
-            .map_err(|e| e.to_string())
+        conn.execute(
+            &self.raw_sql,
+            rusqlite::params_from_iter(self.bindings.iter()),
+        )
+        .map_err(|e| e.to_string())
     }
 
     pub fn insert_sync(&self, conn: &rusqlite::Connection) -> Result<i64, String> {
@@ -725,7 +810,10 @@ impl SqlQuery {
         Ok(conn.last_insert_rowid())
     }
 
-    pub fn fetch_all_sync(&self, conn: &rusqlite::Connection) -> Result<Vec<HashMap<String, String>>, String> {
+    pub fn fetch_all_sync(
+        &self,
+        conn: &rusqlite::Connection,
+    ) -> Result<Vec<HashMap<String, String>>, String> {
         if self.has_explicit_values() {
             let values = crate::backend::sqlite_values(&self.values)?;
             return crate::backend::sqlite_query(
@@ -791,25 +879,40 @@ impl SqlQuery {
     }
 
     /// Asynchronously retrieve the first matching record or abort with HTTP 404
-    pub async fn first_or_fail(&self) -> Result<HashMap<String, String>, crate::helpers::AbortError> {
-        let opt = self.fetch_one().await.map_err(crate::helpers::AbortError::server_error)?;
-        opt.ok_or_else(|| crate::helpers::AbortError::not_found("Requested record does not exist in database"))
+    pub async fn first_or_fail(
+        &self,
+    ) -> Result<HashMap<String, String>, crate::helpers::AbortError> {
+        let opt = self
+            .fetch_one()
+            .await
+            .map_err(crate::helpers::AbortError::server_error)?;
+        opt.ok_or_else(|| {
+            crate::helpers::AbortError::not_found("Requested record does not exist in database")
+        })
     }
 
     /// Asynchronously paginate query results with total row count and limit/offset bounds
-    pub async fn paginate(&self, page: usize, per_page: usize) -> Result<Paginated<HashMap<String, String>>, String> {
+    pub async fn paginate(
+        &self,
+        page: usize,
+        per_page: usize,
+    ) -> Result<Paginated<HashMap<String, String>>, String> {
         let page = if page == 0 { 1 } else { page };
         let per_page = if per_page == 0 { 15 } else { per_page };
         let offset = (page - 1) * per_page;
 
         // Count query
-        let count_sql = format!("SELECT COUNT(*) as total_count FROM ({}) as subquery", self.raw_sql);
+        let count_sql = format!(
+            "SELECT COUNT(*) as total_count FROM ({}) as subquery",
+            self.raw_sql
+        );
         let mut count_query = SqlQuery::new(count_sql);
         count_query.bindings = self.bindings.clone();
         count_query.values = self.values.clone();
 
         let count_rows = count_query.fetch_all().await?;
-        let total = count_rows.first()
+        let total = count_rows
+            .first()
             .and_then(|r| r.get("total_count"))
             .and_then(|s| s.parse::<usize>().ok())
             .unwrap_or(0);
@@ -838,7 +941,11 @@ pub struct Paginated<T> {
 impl<T> Paginated<T> {
     pub fn new(items: Vec<T>, total: usize, page: usize, per_page: usize) -> Self {
         let per_page = if per_page == 0 { 15 } else { per_page };
-        let total_pages = if total == 0 { 1 } else { total.div_ceil(per_page) };
+        let total_pages = if total == 0 {
+            1
+        } else {
+            total.div_ceil(per_page)
+        };
         let page = if page == 0 { 1 } else { page.min(total_pages) };
         Self {
             items,
@@ -858,15 +965,27 @@ impl<T> Paginated<T> {
     }
 
     pub fn next_page(&self) -> Option<usize> {
-        if self.has_next() { Some(self.page + 1) } else { None }
+        if self.has_next() {
+            Some(self.page + 1)
+        } else {
+            None
+        }
     }
 
     pub fn prev_page(&self) -> Option<usize> {
-        if self.has_prev() { Some(self.page - 1) } else { None }
+        if self.has_prev() {
+            Some(self.page - 1)
+        } else {
+            None
+        }
     }
 
     pub fn from_index(&self) -> usize {
-        if self.total == 0 { 0 } else { (self.page - 1) * self.per_page + 1 }
+        if self.total == 0 {
+            0
+        } else {
+            (self.page - 1) * self.per_page + 1
+        }
     }
 
     pub fn to_index(&self) -> usize {
@@ -876,13 +995,19 @@ impl<T> Paginated<T> {
     /// Renders accessible, styled Tailwind CSS pagination controls with Previous/Next buttons and page numbers
     pub fn links_html(&self, base_url: &str) -> String {
         let separator = if base_url.contains('?') { "&" } else { "?" };
-        let from_item = if self.total == 0 { 0 } else { (self.page - 1) * self.per_page + 1 };
+        let from_item = if self.total == 0 {
+            0
+        } else {
+            (self.page - 1) * self.per_page + 1
+        };
         let to_item = (self.page * self.per_page).min(self.total);
 
         let prev_btn = if self.has_prev() {
             format!(
                 r#"<a href="{}{sep}page={}" class="px-3 py-1.5 rounded-lg border border-zinc-700 bg-zinc-850 hover:bg-zinc-800 text-xs text-zinc-300 font-medium transition-colors">Previous</a>"#,
-                base_url, self.page - 1, sep = separator
+                base_url,
+                self.page - 1,
+                sep = separator
             )
         } else {
             r#"<span class="px-3 py-1.5 rounded-lg border border-zinc-800 bg-zinc-900/50 text-xs text-zinc-600 cursor-not-allowed">Previous</span>"#.to_string()
@@ -891,7 +1016,9 @@ impl<T> Paginated<T> {
         let next_btn = if self.has_next() {
             format!(
                 r#"<a href="{}{sep}page={}" class="px-3 py-1.5 rounded-lg border border-zinc-700 bg-zinc-850 hover:bg-zinc-800 text-xs text-zinc-300 font-medium transition-colors">Next</a>"#,
-                base_url, self.page + 1, sep = separator
+                base_url,
+                self.page + 1,
+                sep = separator
             )
         } else {
             r#"<span class="px-3 py-1.5 rounded-lg border border-zinc-800 bg-zinc-900/50 text-xs text-zinc-600 cursor-not-allowed">Next</span>"#.to_string()
@@ -904,7 +1031,10 @@ impl<T> Paginated<T> {
                     r#"<span class="w-8 h-8 flex items-center justify-center rounded-lg bg-indigo-600 text-white text-xs font-bold shadow-sm">{}</span>"#,
                     p
                 ));
-            } else if p <= 3 || p > self.total_pages.saturating_sub(2) || (p as isize - self.page as isize).abs() <= 1 {
+            } else if p <= 3
+                || p > self.total_pages.saturating_sub(2)
+                || (p as isize - self.page as isize).abs() <= 1
+            {
                 pages_html.push_str(&format!(
                     r#"<a href="{}{sep}page={}" class="w-8 h-8 flex items-center justify-center rounded-lg border border-zinc-800 hover:border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-xs text-zinc-400 hover:text-white transition-colors">{}</a>"#,
                     base_url, p, p, sep = separator
@@ -944,7 +1074,9 @@ pub struct SeederRegistry {
 
 impl SeederRegistry {
     pub fn new() -> Self {
-        Self { seeders: Vec::new() }
+        Self {
+            seeders: Vec::new(),
+        }
     }
 
     pub fn register<S: Seeder + 'static>(&mut self, seeder: S) -> &mut Self {
@@ -960,7 +1092,10 @@ impl SeederRegistry {
         self.seeders.is_empty()
     }
 
-    pub fn run_all(&self, db: &Database) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
+    pub fn run_all(
+        &self,
+        db: &Database,
+    ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
         let mut ran = 0;
         for s in &self.seeders {
             s.run(db)?;
@@ -969,7 +1104,11 @@ impl SeederRegistry {
         Ok(ran)
     }
 
-    pub fn run_class(&self, class_name: &str, db: &Database) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+    pub fn run_class(
+        &self,
+        class_name: &str,
+        db: &Database,
+    ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
         for s in &self.seeders {
             if s.name().eq_ignore_ascii_case(class_name) {
                 s.run(db)?;
@@ -1029,9 +1168,7 @@ impl Database {
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, rusqlite::Error> {
         let path_str = path.as_ref().to_string_lossy().to_string();
         let conn = rusqlite::Connection::open(path)?;
-        let config = DatabaseConfig {
-            database: path_str,
-        };
+        let config = DatabaseConfig { database: path_str };
         Ok(Self {
             config,
             conn: DbConn::Sqlite(Arc::new(Mutex::new(conn))),
@@ -1093,8 +1230,9 @@ impl Database {
     pub fn execute_params(&self, sql: &str, params: &[String]) -> Result<u64, String> {
         match &self.conn {
             DbConn::Any(conn) => conn.execute(sql, params),
-            DbConn::Sqlite(conn) => crate::backend::AnyConnection::Sqlite(conn.clone())
-                .execute(sql, params),
+            DbConn::Sqlite(conn) => {
+                crate::backend::AnyConnection::Sqlite(conn.clone()).execute(sql, params)
+            }
         }
     }
 
@@ -1102,8 +1240,9 @@ impl Database {
     pub fn execute_values(&self, sql: &str, params: &[SqlValue]) -> Result<u64, String> {
         match &self.conn {
             DbConn::Any(conn) => conn.execute_values(sql, params),
-            DbConn::Sqlite(conn) => crate::backend::AnyConnection::Sqlite(conn.clone())
-                .execute_values(sql, params),
+            DbConn::Sqlite(conn) => {
+                crate::backend::AnyConnection::Sqlite(conn.clone()).execute_values(sql, params)
+            }
         }
     }
 
@@ -1118,8 +1257,9 @@ impl Database {
     ) -> Result<Vec<std::collections::HashMap<String, String>>, String> {
         match &self.conn {
             DbConn::Any(conn) => conn.query(sql, params),
-            DbConn::Sqlite(conn) => crate::backend::AnyConnection::Sqlite(conn.clone())
-                .query(sql, params),
+            DbConn::Sqlite(conn) => {
+                crate::backend::AnyConnection::Sqlite(conn.clone()).query(sql, params)
+            }
         }
     }
 
@@ -1132,8 +1272,9 @@ impl Database {
     ) -> Result<Vec<std::collections::HashMap<String, String>>, String> {
         match &self.conn {
             DbConn::Any(conn) => conn.query_values(sql, params),
-            DbConn::Sqlite(conn) => crate::backend::AnyConnection::Sqlite(conn.clone())
-                .query_values(sql, params),
+            DbConn::Sqlite(conn) => {
+                crate::backend::AnyConnection::Sqlite(conn.clone()).query_values(sql, params)
+            }
         }
     }
 
@@ -1233,7 +1374,9 @@ impl Database {
         if !columns.iter().any(|name| name == "applied_at")
             && columns.iter().any(|name| name == "executed_at")
         {
-            tx.execute_batch("ALTER TABLE _terminus_migrations RENAME COLUMN executed_at TO applied_at")?;
+            tx.execute_batch(
+                "ALTER TABLE _terminus_migrations RENAME COLUMN executed_at TO applied_at",
+            )?;
         }
         // Validate the expected format before committing a legacy upgrade.
         tx.prepare("SELECT id, name, batch, applied_at FROM _terminus_migrations LIMIT 0")?;
@@ -1245,7 +1388,10 @@ impl Database {
         self.ensure_migrations_table()?;
         if let Some(conn) = self.any_connection() {
             let rows = conn
-                .query("SELECT name, batch, applied_at FROM _terminus_migrations ORDER BY id ASC", &[])
+                .query(
+                    "SELECT name, batch, applied_at FROM _terminus_migrations ORDER BY id ASC",
+                    &[],
+                )
                 .map_err(Self::backend_error)?;
             return rows
                 .iter()
@@ -1253,7 +1399,9 @@ impl Database {
                     let batch = row
                         .get("batch")
                         .and_then(|value| value.parse::<i64>().ok())
-                        .ok_or_else(|| Self::backend_error("Invalid migration batch value".into()))?;
+                        .ok_or_else(|| {
+                            Self::backend_error("Invalid migration batch value".into())
+                        })?;
                     Ok((
                         row.get("name").cloned().unwrap_or_default(),
                         batch,
@@ -1264,7 +1412,8 @@ impl Database {
         }
         let conn = self.sqlite_arc();
         let conn = conn.lock().unwrap();
-        let mut stmt = conn.prepare("SELECT name, batch, applied_at FROM _terminus_migrations ORDER BY id ASC")?;
+        let mut stmt = conn
+            .prepare("SELECT name, batch, applied_at FROM _terminus_migrations ORDER BY id ASC")?;
         let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
         rows.collect()
     }
@@ -1274,7 +1423,10 @@ impl Database {
         self.ensure_migrations_table()?;
         if let Some(conn) = self.any_connection() {
             let rows = conn
-                .query("SELECT COALESCE(MAX(batch), 0) AS batch FROM _terminus_migrations", &[])
+                .query(
+                    "SELECT COALESCE(MAX(batch), 0) AS batch FROM _terminus_migrations",
+                    &[],
+                )
                 .map_err(Self::backend_error)?;
             return rows
                 .first()
@@ -1327,7 +1479,12 @@ impl Database {
     /// Apply pending migration SQL and its bookkeeping in one transaction.
     /// Returns false when this migration has already been applied.
     /// SQL must not contain its own transaction-control statements.
-    pub fn apply_migration(&self, name: &str, sql: &str, batch: i64) -> Result<bool, rusqlite::Error> {
+    pub fn apply_migration(
+        &self,
+        name: &str,
+        sql: &str,
+        batch: i64,
+    ) -> Result<bool, rusqlite::Error> {
         self.ensure_migrations_table()?;
         if let Some(conn) = self.any_connection() {
             // Note: MySQL/MariaDB DDL causes an implicit commit, so full
@@ -1419,7 +1576,7 @@ impl Database {
             let mut guard = conn.lock();
             guard.begin()?;
             let work = (|guard: &mut crate::backend::AnyGuard<'_>,
-                        down_sql: &mut F|
+                         down_sql: &mut F|
              -> Result<Vec<String>, String> {
                 let rows = guard.query(
                     "SELECT COALESCE(MAX(batch), 0) AS batch FROM _terminus_migrations",
@@ -1476,26 +1633,40 @@ impl Database {
         }
         let conn = self.sqlite_arc();
         let mut conn = conn.lock().unwrap();
-        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        let tx = conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
             .map_err(|e| e.to_string())?;
-        let batch: i64 = tx.query_row(
-            "SELECT COALESCE(MAX(batch), 0) FROM _terminus_migrations", [], |row| row.get(0),
-        ).map_err(|e| e.to_string())?;
+        let batch: i64 = tx
+            .query_row(
+                "SELECT COALESCE(MAX(batch), 0) FROM _terminus_migrations",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
         let names: Vec<String> = {
-            let mut stmt = tx.prepare("SELECT name FROM _terminus_migrations WHERE batch = ?1 ORDER BY id DESC")
+            let mut stmt = tx
+                .prepare("SELECT name FROM _terminus_migrations WHERE batch = ?1 ORDER BY id DESC")
                 .map_err(|e| e.to_string())?;
-            let rows = stmt.query_map([batch], |row| row.get(0)).map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map([batch], |row| row.get(0))
+                .map_err(|e| e.to_string())?;
             rows.collect::<Result<_, _>>().map_err(|e| e.to_string())?
         };
-        let statements: Vec<String> = names.iter().map(|name| {
-            let sql = down_sql(name)?;
-            if sql.trim().is_empty() {
-                return Err(format!("Cannot roll back {name}: explicit down SQL is required"));
-            }
-            Ok(sql)
-        }).collect::<Result<_, _>>()?;
+        let statements: Vec<String> = names
+            .iter()
+            .map(|name| {
+                let sql = down_sql(name)?;
+                if sql.trim().is_empty() {
+                    return Err(format!(
+                        "Cannot roll back {name}: explicit down SQL is required"
+                    ));
+                }
+                Ok(sql)
+            })
+            .collect::<Result<_, _>>()?;
         for (name, sql) in names.iter().zip(statements) {
-            tx.execute_batch(&sql).map_err(|e| format!("Failed to roll back {name}: {e}"))?;
+            tx.execute_batch(&sql)
+                .map_err(|e| format!("Failed to roll back {name}: {e}"))?;
             tx.execute("DELETE FROM _terminus_migrations WHERE name = ?1", [name])
                 .map_err(|e| e.to_string())?;
         }
@@ -1533,4 +1704,3 @@ macro_rules! query {
         $crate::orm::SqlQuery::new($sql)$(.bind($val))*
     };
 }
-

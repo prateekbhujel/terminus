@@ -1,8 +1,8 @@
-use std::sync::{Arc, Mutex};
-use rusqlite::{params, Connection};
 use crate::domain::{Role, User, UserStatus};
 use crate::repository::UserRepository;
 use crate::resource::QueryState;
+use rusqlite::{params, Connection};
+use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
 pub struct SqliteUserRepository {
@@ -51,8 +51,7 @@ impl SqliteUserRepository {
         // verification after releasing it.
         let found = {
             let db = self.conn.lock().unwrap();
-            db
-            .query_row(
+            db.query_row(
                 "SELECT id, name, email, role, status, created_at, password_hash
                  FROM users WHERE LOWER(email) = LOWER(?1)",
                 params![email],
@@ -96,10 +95,15 @@ impl UserRepository for SqliteUserRepository {
         let total: usize = if query.search.is_empty() {
             db.query_row(&count_sql, [], |r| r.get(0)).unwrap_or(0)
         } else {
-            db.query_row(&count_sql, params![search_pattern], |r| r.get(0)).unwrap_or(0)
+            db.query_row(&count_sql, params![search_pattern], |r| r.get(0))
+                .unwrap_or(0)
         };
 
-        let per_page = if query.per_page == 0 { 8 } else { query.per_page };
+        let per_page = if query.per_page == 0 {
+            8
+        } else {
+            query.per_page
+        };
         let page = if query.page == 0 { 1 } else { query.page };
         let offset = (page - 1) * per_page;
 
@@ -136,7 +140,10 @@ impl UserRepository for SqliteUserRepository {
                     created_at,
                     ..Default::default()
                 })
-            }).unwrap().collect::<Result<Vec<_>, _>>().unwrap_or_default()
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap_or_default()
         } else {
             stmt.query_map(params![search_pattern, per_page, offset], |row| {
                 let id: i64 = row.get(0)?;
@@ -155,7 +162,10 @@ impl UserRepository for SqliteUserRepository {
                     created_at,
                     ..Default::default()
                 })
-            }).unwrap().collect::<Result<Vec<_>, _>>().unwrap_or_default()
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap_or_default()
         };
 
         (user_iter, total)
@@ -186,7 +196,8 @@ impl UserRepository for SqliteUserRepository {
                     ..Default::default()
                 })
             },
-        ).ok()
+        )
+        .ok()
     }
 
     fn find_by_email(&self, email: &str) -> Option<User> {
@@ -220,21 +231,36 @@ impl UserRepository for SqliteUserRepository {
         let db = self.conn.lock().unwrap();
         db.execute(
             "INSERT INTO users (name, email, role, status, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![user.name, user.email, user.role.as_str(), user.status.as_str(), user.created_at],
-        ).map_err(|e| e.to_string())?;
+            params![
+                user.name,
+                user.email,
+                user.role.as_str(),
+                user.status.as_str(),
+                user.created_at
+            ],
+        )
+        .map_err(|e| e.to_string())?;
 
         let last_id = db.last_insert_rowid();
         Ok(last_id.to_string())
     }
 
-    fn update(&self, id: &str, name: String, email: String, role: Role, status: UserStatus) -> Result<(), String> {
+    fn update(
+        &self,
+        id: &str,
+        name: String,
+        email: String,
+        role: Role,
+        status: UserStatus,
+    ) -> Result<(), String> {
         let db = self.conn.lock().unwrap();
         let parsed_id: i64 = id.parse().map_err(|_| "Invalid ID".to_string())?;
 
         db.execute(
             "UPDATE users SET name = ?1, email = ?2, role = ?3, status = ?4 WHERE id = ?5",
             params![name, email, role.as_str(), status.as_str(), parsed_id],
-        ).map_err(|e| e.to_string())?;
+        )
+        .map_err(|e| e.to_string())?;
 
         Ok(())
     }

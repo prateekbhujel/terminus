@@ -41,7 +41,9 @@ impl EventBus {
         F: Fn(&Event) + Send + Sync + 'static,
     {
         let mut map = self.listeners.write().unwrap();
-        map.entry(event.into()).or_default().push(Arc::new(listener));
+        map.entry(event.into())
+            .or_default()
+            .push(Arc::new(listener));
     }
 
     /// Dispatch an event to all of its listeners. Returns how many ran.

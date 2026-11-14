@@ -61,7 +61,9 @@ impl LocalStorage {
     }
 
     pub fn exists(&self, path: &str) -> bool {
-        self.resolve(path).map(|full| full.exists()).unwrap_or(false)
+        self.resolve(path)
+            .map(|full| full.exists())
+            .unwrap_or(false)
     }
 
     /// Delete a file. Returns true when a file was removed.
@@ -76,22 +78,24 @@ impl LocalStorage {
 
     /// Public URL for a stored path: `{url_prefix}/{path}`.
     pub fn url(&self, path: &str) -> String {
-        format!("{}/{}", self.url_prefix.trim_end_matches('/'), path.trim_start_matches('/'))
+        format!(
+            "{}/{}",
+            self.url_prefix.trim_end_matches('/'),
+            path.trim_start_matches('/')
+        )
     }
 }
 
 /// An expiring, HMAC-signed URL for a local storage path (Laravel-style
 /// temporary URLs). The signature covers the path and expiry; any tampering
 /// or expiry makes verification fail.
-pub fn signed_url(
-    storage: &LocalStorage,
-    path: &str,
-    secret: &[u8],
-    ttl_secs: i64,
-) -> String {
+pub fn signed_url(storage: &LocalStorage, path: &str, secret: &[u8], ttl_secs: i64) -> String {
     let expires = chrono::Utc::now().timestamp() + ttl_secs;
     let signature = signature_for(path, expires, secret);
-    format!("{}?expires={expires}&signature={signature}", storage.url(path))
+    format!(
+        "{}?expires={expires}&signature={signature}",
+        storage.url(path)
+    )
 }
 
 /// Verify a signed URL's path/expiry/signature at `now`.
@@ -188,17 +192,21 @@ impl S3Storage {
             amz_date,
             ttl_secs
         );
-        let canonical_request = format!(
-            "GET\n{canonical_uri}\n{query}\nhost:{host}\n\nhost\nUNSIGNED-PAYLOAD"
-        );
+        let canonical_request =
+            format!("GET\n{canonical_uri}\n{query}\nhost:{host}\n\nhost\nUNSIGNED-PAYLOAD");
         let string_to_sign = format!(
             "AWS4-HMAC-SHA256\n{amz_date}\n{credential_scope}\n{}",
             crate::token::sha256_hex(canonical_request.as_bytes())
         );
-        let signature = sigv4_signature(&self.secret_key, &date_stamp, &self.region, &string_to_sign);
+        let signature =
+            sigv4_signature(&self.secret_key, &date_stamp, &self.region, &string_to_sign);
         format!(
             "{}://{host}{canonical_uri}?{query}&X-Amz-Signature={signature}",
-            if self.endpoint.starts_with("https://") { "https" } else { "http" }
+            if self.endpoint.starts_with("https://") {
+                "https"
+            } else {
+                "http"
+            }
         )
     }
 
@@ -223,7 +231,9 @@ impl S3Storage {
         let canonical_uri = format!(
             "/{}",
             url.trim_start_matches("https://")
-                .trim_start_matches("http://").split_once('/').map(|x| x.1)
+                .trim_start_matches("http://")
+                .split_once('/')
+                .map(|x| x.1)
                 .unwrap_or("")
         );
         let canonical_headers =
@@ -237,7 +247,8 @@ impl S3Storage {
             "AWS4-HMAC-SHA256\n{amz_date}\n{credential_scope}\n{}",
             crate::token::sha256_hex(canonical_request.as_bytes())
         );
-        let signature = sigv4_signature(&self.secret_key, &date_stamp, &self.region, &string_to_sign);
+        let signature =
+            sigv4_signature(&self.secret_key, &date_stamp, &self.region, &string_to_sign);
         let authorization = format!(
             "AWS4-HMAC-SHA256 Credential={}/{credential_scope}, SignedHeaders={signed_headers}, Signature={signature}",
             self.access_key
@@ -362,7 +373,8 @@ fn uri_encode_strict(value: &str) -> String {
 
 #[cfg(feature = "s3")]
 fn sigv4_signature(secret: &str, date_stamp: &str, region: &str, string_to_sign: &str) -> String {
-    let k_date = crate::session::hmac_sha256(format!("AWS4{secret}").as_bytes(), date_stamp.as_bytes());
+    let k_date =
+        crate::session::hmac_sha256(format!("AWS4{secret}").as_bytes(), date_stamp.as_bytes());
     let k_region = crate::session::hmac_sha256(&k_date, region.as_bytes());
     let k_service = crate::session::hmac_sha256(&k_region, b"s3");
     let k_signing = crate::session::hmac_sha256(&k_service, b"aws4_request");

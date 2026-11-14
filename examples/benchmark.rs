@@ -40,8 +40,17 @@ impl CreateUserRequest {
         Validator::new(self)
             .rule("email", |r| !r.email.is_empty(), "Email is required")
             .rule("email", |r| r.email.contains('@'), "Valid email required")
-            .rule("username", |r| r.username.len() >= 3, "Username min 3 chars")
-            .rule_when(|r| r.age.is_some(), "age", |r| r.age.unwrap() >= 18, "Age must be >= 18")
+            .rule(
+                "username",
+                |r| r.username.len() >= 3,
+                "Username min 3 chars",
+            )
+            .rule_when(
+                |r| r.age.is_some(),
+                "age",
+                |r| r.age.unwrap() >= 18,
+                "Age must be >= 18",
+            )
             .validate()
     }
 }
@@ -102,7 +111,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("============================================================================================");
     println!("  TERMINUS FRAMEWORK — EMPIRICAL BENCHMARK SUITE");
     println!("  Measuring In-Memory Throughput, Microsecond Latency & Framework Overhead");
-    println!("  Rounds: {} iterations per benchmark (Warmup: {})", BENCH_ROUNDS, WARMUP_ROUNDS);
+    println!(
+        "  Rounds: {} iterations per benchmark (Warmup: {})",
+        BENCH_ROUNDS, WARMUP_ROUNDS
+    );
     println!("============================================================================================");
 
     // -------------------------------------------------------------------------
@@ -219,10 +231,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         post(|Json(payload): Json<EchoPayload>| async move { Json(payload) }),
     );
 
-    let terminus_post_app = App::new().post(
-        "/api/echo",
-        |Json(payload): Json<EchoPayload>| async move { json_response(payload) },
-    );
+    let terminus_post_app = App::new()
+        .post("/api/echo", |Json(payload): Json<EchoPayload>| async move {
+            json_response(payload)
+        });
     let terminus_post_router = terminus_post_app.build();
 
     let json_bytes = serde_json::to_vec(&EchoPayload {
@@ -244,7 +256,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         plain_post_latencies.push(t0.elapsed().as_nanos() as u64);
         assert_eq!(res.status(), StatusCode::OK);
     }
-    let plain_post_stats = BenchStats::calculate(BENCH_ROUNDS, start_plain_post, plain_post_latencies);
+    let plain_post_stats =
+        BenchStats::calculate(BENCH_ROUNDS, start_plain_post, plain_post_latencies);
 
     // Benchmark Terminus POST
     let mut terminus_post_latencies = Vec::with_capacity(BENCH_ROUNDS);
@@ -260,7 +273,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         terminus_post_latencies.push(t0.elapsed().as_nanos() as u64);
         assert_eq!(res.status(), StatusCode::OK);
     }
-    let terminus_post_stats = BenchStats::calculate(BENCH_ROUNDS, start_terminus_post, terminus_post_latencies);
+    let terminus_post_stats =
+        BenchStats::calculate(BENCH_ROUNDS, start_terminus_post, terminus_post_latencies);
 
     print_stat_row("Plain Axum POST JSON", &plain_post_stats);
     print_stat_row("Terminus POST JSON", &terminus_post_stats);
@@ -334,9 +348,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // -------------------------------------------------------------------------
     println!("\n{}", "=".repeat(84));
     println!("  [SUMMARY] MEASURED IN-MEMORY PERFORMANCE");
-    println!("  Core router mean: {:.2} µs ({:+.2}% vs plain Axum).", core_stats.mean_ns / 1000.0, core_delta_pct);
-    println!("  Core router p50: {:.2} µs; with CORS: {:.2} µs.", core_stats.p50_ns as f64 / 1000.0, cors_stats.p50_ns as f64 / 1000.0);
-    println!("  SQLite SELECT mean: {:.2} µs.", raw_db_stats.mean_ns / 1000.0);
+    println!(
+        "  Core router mean: {:.2} µs ({:+.2}% vs plain Axum).",
+        core_stats.mean_ns / 1000.0,
+        core_delta_pct
+    );
+    println!(
+        "  Core router p50: {:.2} µs; with CORS: {:.2} µs.",
+        core_stats.p50_ns as f64 / 1000.0,
+        cors_stats.p50_ns as f64 / 1000.0
+    );
+    println!(
+        "  SQLite SELECT mean: {:.2} µs.",
+        raw_db_stats.mean_ns / 1000.0
+    );
     println!("  These microbenchmarks exclude network and deployment overhead.");
     println!("{}", "=".repeat(84));
 

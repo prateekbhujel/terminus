@@ -8,9 +8,19 @@ use serde::{Deserialize, Serialize};
 /// OAuth Social Provider configurations
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum OAuthProvider {
-    GitHub { client_id: String, client_secret: String },
-    Google { client_id: String, client_secret: String },
-    Custom { provider_name: String, auth_url: String, token_url: String },
+    GitHub {
+        client_id: String,
+        client_secret: String,
+    },
+    Google {
+        client_id: String,
+        client_secret: String,
+    },
+    Custom {
+        provider_name: String,
+        auth_url: String,
+        token_url: String,
+    },
 }
 
 impl OAuthProvider {
@@ -60,7 +70,8 @@ impl WebhookVerifier {
 
             if let Some(ts) = timestamp {
                 let signed_payload = format!("{}.{}", ts, payload);
-                let expected = crate::token::hmac_sha256_hex(secret.as_bytes(), signed_payload.as_bytes());
+                let expected =
+                    crate::token::hmac_sha256_hex(secret.as_bytes(), signed_payload.as_bytes());
                 for sig in v1_signatures {
                     if crate::token::constant_time_eq_str(sig, &expected) {
                         return true;

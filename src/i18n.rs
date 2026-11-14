@@ -47,7 +47,10 @@ impl Translator {
     }
 
     pub fn locale(&self) -> String {
-        self.current.read().map(|c| c.clone()).unwrap_or_else(|_| self.fallback.clone())
+        self.current
+            .read()
+            .map(|c| c.clone())
+            .unwrap_or_else(|_| self.fallback.clone())
     }
 
     /// Translate `key` in the current locale, falling back to the fallback
@@ -62,7 +65,11 @@ impl Translator {
         let text = bundles
             .get(&current)
             .and_then(|bundle| bundle.get(key))
-            .or_else(|| bundles.get(&self.fallback).and_then(|bundle| bundle.get(key)));
+            .or_else(|| {
+                bundles
+                    .get(&self.fallback)
+                    .and_then(|bundle| bundle.get(key))
+            });
         let Some(text) = text else {
             return key.to_string();
         };

@@ -181,7 +181,10 @@ pub fn matches_filters(
                 if !selected.contains(&record_val.as_str()) {
                     return false;
                 }
-            } else if !record_val.to_lowercase().contains(&filter_val.to_lowercase()) {
+            } else if !record_val
+                .to_lowercase()
+                .contains(&filter_val.to_lowercase())
+            {
                 return false;
             }
         } else {

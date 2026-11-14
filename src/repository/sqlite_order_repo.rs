@@ -1,8 +1,8 @@
-use std::sync::{Arc, Mutex};
-use rusqlite::{params, Connection};
 use crate::domain::{Order, OrderStatus};
 use crate::repository::OrderRepository;
 use crate::resource::QueryState;
+use rusqlite::{params, Connection};
+use std::sync::{Arc, Mutex};
 
 pub struct SqliteOrderRepository {
     conn: Arc<Mutex<Connection>>,
@@ -42,10 +42,15 @@ impl OrderRepository for SqliteOrderRepository {
         let total: usize = if query.search.is_empty() {
             db.query_row(&count_sql, [], |r| r.get(0)).unwrap_or(0)
         } else {
-            db.query_row(&count_sql, params![search_pattern], |r| r.get(0)).unwrap_or(0)
+            db.query_row(&count_sql, params![search_pattern], |r| r.get(0))
+                .unwrap_or(0)
         };
 
-        let per_page = if query.per_page == 0 { 8 } else { query.per_page };
+        let per_page = if query.per_page == 0 {
+            8
+        } else {
+            query.per_page
+        };
         let page = if query.page == 0 { 1 } else { query.page };
         let offset = (page - 1) * per_page;
 
@@ -80,7 +85,10 @@ impl OrderRepository for SqliteOrderRepository {
                     status: OrderStatus::from_str_loose(&status_str),
                     date,
                 })
-            }).unwrap().collect::<Result<Vec<_>, _>>().unwrap_or_default()
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap_or_default()
         } else {
             stmt.query_map(params![search_pattern, per_page, offset], |row| {
                 let id: String = row.get(0)?;
@@ -96,7 +104,10 @@ impl OrderRepository for SqliteOrderRepository {
                     status: OrderStatus::from_str_loose(&status_str),
                     date,
                 })
-            }).unwrap().collect::<Result<Vec<_>, _>>().unwrap_or_default()
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap_or_default()
         };
 
         (order_iter, total)
@@ -123,26 +134,41 @@ impl OrderRepository for SqliteOrderRepository {
                     date,
                 })
             },
-        ).ok()
+        )
+        .ok()
     }
 
     fn save(&self, order: Order) -> Result<String, String> {
         let db = self.conn.lock().unwrap();
         db.execute(
             "INSERT INTO orders (id, customer, amount, status, date) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![order.id, order.customer, order.amount, order.status.as_str(), order.date],
-        ).map_err(|e| e.to_string())?;
+            params![
+                order.id,
+                order.customer,
+                order.amount,
+                order.status.as_str(),
+                order.date
+            ],
+        )
+        .map_err(|e| e.to_string())?;
 
         Ok(order.id)
     }
 
-    fn update(&self, id: &str, customer: String, amount: String, status: OrderStatus) -> Result<(), String> {
+    fn update(
+        &self,
+        id: &str,
+        customer: String,
+        amount: String,
+        status: OrderStatus,
+    ) -> Result<(), String> {
         let db = self.conn.lock().unwrap();
 
         db.execute(
             "UPDATE orders SET customer = ?1, amount = ?2, status = ?3 WHERE id = ?4",
             params![customer, amount, status.as_str(), id],
-        ).map_err(|e| e.to_string())?;
+        )
+        .map_err(|e| e.to_string())?;
 
         Ok(())
     }

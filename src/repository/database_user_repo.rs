@@ -89,7 +89,11 @@ impl DatabaseUserRepository {
 
 impl UserRepository for DatabaseUserRepository {
     fn list(&self, query: &QueryState) -> (Vec<User>, usize) {
-        let per_page = if query.per_page == 0 { 8 } else { query.per_page };
+        let per_page = if query.per_page == 0 {
+            8
+        } else {
+            query.per_page
+        };
         let page = if query.page == 0 { 1 } else { query.page };
         let offset = (page - 1) * per_page;
         let order_by = match query.sort_by.as_deref() {
@@ -146,7 +150,9 @@ impl UserRepository for DatabaseUserRepository {
             .db
             .query_values(&sql, &[crate::backend::SqlValue::Int(parsed_id)])
             .ok()?;
-        rows.into_iter().next().and_then(|row| Self::row_to_user(&row))
+        rows.into_iter()
+            .next()
+            .and_then(|row| Self::row_to_user(&row))
     }
 
     fn find_by_email(&self, email: &str) -> Option<User> {
@@ -155,7 +161,9 @@ impl UserRepository for DatabaseUserRepository {
             self.placeholder(1)
         );
         let rows = self.db.query_params(&sql, &[email.to_string()]).ok()?;
-        rows.into_iter().next().and_then(|row| Self::row_to_user(&row))
+        rows.into_iter()
+            .next()
+            .and_then(|row| Self::row_to_user(&row))
     }
 
     fn save(&self, user: User) -> Result<String, String> {
