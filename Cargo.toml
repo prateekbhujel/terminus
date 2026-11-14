@@ -7,7 +7,6 @@ description = "Terminus — High-performance, batteries-included web and API app
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/prateekbhujel/terminus"
-homepage = "https://github.com/prateekbhujel/terminus"
 documentation = "https://docs.rs/terminus-rs"
 keywords = ["framework", "fullstack", "web", "axum", "orm"]
 categories = ["web-programming::http-server", "command-line-utilities", "database", "development-tools"]

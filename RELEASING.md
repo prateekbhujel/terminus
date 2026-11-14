@@ -63,7 +63,7 @@ Every release must pass all checks below on a clean working tree before tagging:
 
 5. **CLI Installation & Quickstart Smoke Test**
    ```bash
-   cargo install --path . --locked --root /tmp/terminus-release-smoke
+   cargo install --path . --root /tmp/terminus-release-smoke
    /tmp/terminus-release-smoke/bin/terminus version
    TERMINUS_EXPORT_SPEC=/tmp/terminus-release-smoke/app-spec.json cargo run --example quickstart
    /tmp/terminus-release-smoke/bin/terminus schema --json --spec=/tmp/terminus-release-smoke/app-spec.json

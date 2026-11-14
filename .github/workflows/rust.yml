@@ -27,7 +27,7 @@ jobs:
       uses: Swatinem/rust-cache@v2
 
     - name: Fetch dependencies
-      run: cargo fetch --locked
+      run: cargo fetch
 
     - name: Check formatting (rustfmt)
       run: cargo fmt --all -- --check
@@ -69,7 +69,7 @@ jobs:
         INSTALL_ROOT="$RUNNER_TEMP/terminus-install"
         SMOKE_WORK="$RUNNER_TEMP/terminus-smoke"
         mkdir -p "$SMOKE_WORK"
-        cargo install --path . --locked --offline --root "$INSTALL_ROOT"
+        cargo install --path . --offline --root "$INSTALL_ROOT"
         "$INSTALL_ROOT/bin/terminus" version
 
         TERMINUS_EXPORT_SPEC="$SMOKE_WORK/app-spec.json" cargo run --quiet --example quickstart
