@@ -197,6 +197,14 @@ impl AdminPanel {
         self.modules.clone()
     }
 
+    pub fn resources(&self) -> &[DynResource] {
+        &self.resources
+    }
+
+    pub fn modules(&self) -> &[Arc<dyn crate::module::AppModule>] {
+        &self.modules
+    }
+
     /// Broadcast an event across all WebSocket clients
     pub fn broadcast(&self, channel: &str, event: &str, data: serde_json::Value) -> usize {
         self.broadcaster.broadcast(channel, event, data)

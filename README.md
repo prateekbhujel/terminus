@@ -19,7 +19,7 @@ Web Admin • SQLite/PostgreSQL/MySQL/Redis/MongoDB • HMAC Sessions • Compil
 - Database connection management and batch migrations (SQLite, PostgreSQL, MySQL/MariaDB, plus Redis and MongoDB)
 - Request validation with structured JSON error responses
 - Signed session cookies, CSRF protection, and flash message bags
-- **Deterministic machine introspection**, so autonomous AI coding agents can inspect models, routes, and database tables without hallucination
+- **Versioned application contracts (`AppSpec`)**, so AI coding agents can read exported routes, resources, and `DATABASE_URL` tables with explicit provenance and honest unknowns
 
 Terminus provides strong conventions and full-stack solutions to these needs, designed from first principles around what makes sense in Rust.
 
@@ -124,48 +124,74 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ---
 
-## Killer Feature: Deterministic Machine Introspection
+## Versioned Application Contract (`terminus schema`)
 
-When developers pair program with autonomous AI coding agents, agents frequently hallucinate route names, database columns, and model relationships because they must guess across dozens of files.
-
-Terminus solves this with **deterministic application introspection**:
+Instead of regex-scanning source files or guessing field types, Terminus treats your built application's `AppSpec` as the authoritative contract and lets any `App::run()` binary export its manifest on demand:
 
 ```bash
+# Export the authoritative AppSpec manifest from a runnable Terminus app (no server port bound)
+cargo run --example quickstart -- --export-spec .terminus/app-spec.json
+# Or via environment variable:
+TERMINUS_EXPORT_SPEC=.terminus/app-spec.json cargo run --example quickstart
+
+# Combine the exported AppSpec manifest with live DATABASE_URL inspection
 terminus schema --json
 ```
 
-Outputs a structured, zero-hallucination JSON specification of your entire application:
+Outputs a versioned JSON contract (`contract_version: "1.0"`) with explicit `origin` provenance, 3-state route `auth` (`"required"`, `"public"`, or `"unknown"` when handlers omit auth metadata), observed SQL columns (`rust_type: null` when inferred only from the database), and an `unavailable` list for opaque Axum routers or missing manifests:
 
 ```json
 {
+  "contract_version": "1.0",
   "framework": "terminus-rs",
   "version": "0.0.3",
-  "app_name": "Warehouse Master",
+  "app_name": "Terminus Quickstart",
+  "host": "127.0.0.1",
+  "port": 3000,
+  "origin": {
+    "kind": "cli_inspection",
+    "authoritative_app_contract": true,
+    "manifest_path": ".terminus/app-spec.json",
+    "database_backend": "sqlite",
+    "database_source": "default (terminus.db)"
+  },
   "routes": [
-    { "method": "GET", "path": "/api/items", "handler_name": "list_items", "auth_required": true }
+    {
+      "method": "GET",
+      "path": "/admin/login",
+      "handler_name": "panel::login_page",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/dashboard",
+      "handler_name": "panel::dashboard_page",
+      "auth": "required"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/health",
+      "handler_name": "my_app::health",
+      "auth": "unknown"
+    }
   ],
   "models": [
     {
-      "name": "Item",
-      "table": "items",
+      "name": "users",
+      "table": "users",
+      "source": "database_schema",
       "fields": [
-        { "name": "id", "rust_type": "String", "sql_type": "TEXT", "primary_key": true },
-        { "name": "sku", "rust_type": "String", "sql_type": "TEXT" },
-        { "name": "quantity", "rust_type": "i64", "sql_type": "INTEGER" }
+        { "name": "id", "rust_type": null, "sql_type": "TEXT", "nullable": false, "primary_key": true }
       ]
     }
   ],
   "resources": [
-    { "name": "Item", "slug": "items", "searchable_fields": ["sku", "name"] }
+    { "name": "User", "slug": "users", "table": "users", "searchable_fields": ["name", "email"], "sortable_fields": ["id", "name"] }
   ]
 }
 ```
 
-You can also view a clean terminal summary:
-
-```bash
-terminus schema
-```
+When an application mounts an opaque `axum::Router` via `App::api` or `App::merge` (or an `AppModule` that omits `route_specs()`), `terminus schema` records that mount in `unavailable` rather than fabricating inner routes. Pass `--spec=<path>` to inspect a non-default manifest path, or omit `--json` for the terminal summary (`terminus schema`).
 
 ---
 
@@ -523,7 +549,7 @@ terminus <command> [options]
 | Command | Description |
 |---|---|
 | `new [name] [--preset=...]` | Scaffold a new project (interactive wizard or flags) |
-| `schema [--json]` | Inspect application topology (models, routes, admin resources) |
+| `schema [--json] [--spec=...]` | Read exported `AppSpec` manifest and live `DATABASE_URL` schema |
 | `route:list \| routes` | List registered web routes, admin resources, and API endpoints |
 | `tinker [--execute=...]` | Interactive database REPL console with query evaluation |
 | `make:controller <Name> [-r]` | Scaffold a web controller (or RESTful resource controller) |

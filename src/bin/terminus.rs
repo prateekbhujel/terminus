@@ -25,7 +25,15 @@ fn main() {
         "version" | "--version" | "-v" => print_version(),
         "schema" | "inspect" | "app:spec" => {
             let is_json = args.iter().any(|a| a == "--json" || a == "-j");
-            run_schema(is_json);
+            let spec_arg = args
+                .iter()
+                .find_map(|a| a.strip_prefix("--spec="))
+                .or_else(|| {
+                    args.windows(2)
+                        .find(|w| w[0] == "--spec")
+                        .map(|w| w[1].as_str())
+                });
+            run_schema(is_json, spec_arg);
         }
         "make:slice" | "make:domain" | "slice:create" => {
             let name = args.get(2).map(|s| s.as_str());
@@ -141,7 +149,7 @@ fn print_banner() {
 
 fn print_help() {
     print_banner();
-    println!("Usage:\n  terminus <command> [arguments]\n\n\x1b[1mAvailable Commands:\x1b[0m\n  \x1b[33mnew [name] [--preset=...] [--frontend=...]\x1b[0m Scaffold a new Terminus project (interactive wizard or flags)\n  \x1b[33mschema [--json]\x1b[0m          Inspect complete application topology (models, routes, admin)\n  \x1b[33mroute:list | routes\x1b[0m      List registered web routes, admin resources & API endpoints\n  \x1b[33mtinker [--execute=...]\x1b[0m   Interactive database REPL & command console\n  \x1b[33mmake:controller <Name> [-r]\x1b[0m Scaffold a Controller (or RESTful resource controller)\n  \x1b[33mmake:model <Name> [-mc]\x1b[0m  Scaffold a Model (with optional -m migration, -c controller)\n  \x1b[33mmake:seeder <Name>\x1b[0m       Scaffold a database Seeder class\n  \x1b[33mmake:slice <Name> [--fields=...]\x1b[0m Scaffold a full-stack vertical domain slice (DDD)\n  \x1b[33mmake:resource <Name>\x1b[0m     Scaffold a new Admin Resource with table & form\n  \x1b[33mmake:module <Name>\x1b[0m       Scaffold an Enterprise Modular (DDD) domain module\n  \x1b[33mmake:repo <Name>\x1b[0m         Scaffold a SQLite repository implementation\n  \x1b[33mmake:migration <Name>\x1b[0m    Generate a timestamped SQL migration file\n  \x1b[33mmigrate\x1b[0m                  Run pending database migrations\n  \x1b[33mmigrate:status\x1b[0m           Show execution status of each migration batch\n  \x1b[33mmigrate:rollback\x1b[0m         Rollback the latest migration batch\n  \x1b[33mdb:seed\x1b[0m                  Seed demo accounts and orders into database\n  \x1b[33mdb:tables\x1b[0m                Inspect SQLite database tables, schema, and row counts\n  \x1b[33mschedule:run\x1b[0m             Run due scheduled tasks and recurring cron jobs\n  \x1b[33mschedule:list\x1b[0m            List scheduled tasks and recurring frequencies\n  \x1b[33mcache:clear\x1b[0m              Flush application cache\n  \x1b[33mmake:token [Name]\x1b[0m        Generate an API Personal Access Token\n  \x1b[33mtoken:list\x1b[0m               List active Personal Access Tokens\n  \x1b[33mtoken:revoke [ID]\x1b[0m        Revoke a Personal Access Token\n  \x1b[33mmake:sdk [--lang=ts|openapi]\x1b[0m Export typed TypeScript client or OpenAPI 3.0.3 contract\n  \x1b[33mmake:job <Name>\x1b[0m          Scaffold a background Queue Job\n  \x1b[33mmake:mail <Name>\x1b[0m         Scaffold a Transactional Mail notification\n  \x1b[33mws:serve\x1b[0m                 Start standalone WebSocket broadcasting server\n  \x1b[33mqueue:work\x1b[0m               Start processing background queue jobs\n  \x1b[33mmail:outbox\x1b[0m              Inspect sent transactional emails\n  \x1b[33mtheme:preview\x1b[0m            Preview theme colors, palettes, and font families\n  \x1b[33magent:guide [--json]\x1b[0m     Display agent-native architecture specification\n  \x1b[33mversion\x1b[0m                  Show Terminus CLI version\n\n\x1b[1mExamples:\x1b[0m\n  terminus route:list\n  terminus tinker\n  terminus make:model Product -mc\n  terminus make:controller OrderController --resource\n  terminus make:seeder ProductSeeder\n  terminus migrate:status\n  terminus migrate:rollback\n  terminus schedule:run\n  terminus new my_project\n");
+    println!("Usage:\n  terminus <command> [arguments]\n\n\x1b[1mAvailable Commands:\x1b[0m\n  \x1b[33mnew [name] [--preset=...] [--frontend=...]\x1b[0m Scaffold a new Terminus project (interactive wizard or flags)\n  \x1b[33mschema [--json] [--spec=...]\x1b[0m Read exported AppSpec contract and DATABASE_URL schema\n  \x1b[33mroute:list | routes\x1b[0m      List registered web routes, admin resources & API endpoints\n  \x1b[33mtinker [--execute=...]\x1b[0m   Interactive database REPL & command console\n  \x1b[33mmake:controller <Name> [-r]\x1b[0m Scaffold a Controller (or RESTful resource controller)\n  \x1b[33mmake:model <Name> [-mc]\x1b[0m  Scaffold a Model (with optional -m migration, -c controller)\n  \x1b[33mmake:seeder <Name>\x1b[0m       Scaffold a database Seeder class\n  \x1b[33mmake:slice <Name> [--fields=...]\x1b[0m Scaffold a full-stack vertical domain slice (DDD)\n  \x1b[33mmake:resource <Name>\x1b[0m     Scaffold a new Admin Resource with table & form\n  \x1b[33mmake:module <Name>\x1b[0m       Scaffold an Enterprise Modular (DDD) domain module\n  \x1b[33mmake:repo <Name>\x1b[0m         Scaffold a SQLite repository implementation\n  \x1b[33mmake:migration <Name>\x1b[0m    Generate a timestamped SQL migration file\n  \x1b[33mmigrate\x1b[0m                  Run pending database migrations\n  \x1b[33mmigrate:status\x1b[0m           Show execution status of each migration batch\n  \x1b[33mmigrate:rollback\x1b[0m         Rollback the latest migration batch\n  \x1b[33mdb:seed\x1b[0m                  Seed demo accounts and orders into database\n  \x1b[33mdb:tables\x1b[0m                Inspect SQLite database tables, schema, and row counts\n  \x1b[33mschedule:run\x1b[0m             Run due scheduled tasks and recurring cron jobs\n  \x1b[33mschedule:list\x1b[0m            List scheduled tasks and recurring frequencies\n  \x1b[33mcache:clear\x1b[0m              Flush application cache\n  \x1b[33mmake:token [Name]\x1b[0m        Generate an API Personal Access Token\n  \x1b[33mtoken:list\x1b[0m               List active Personal Access Tokens\n  \x1b[33mtoken:revoke [ID]\x1b[0m        Revoke a Personal Access Token\n  \x1b[33mmake:sdk [--lang=ts|openapi]\x1b[0m Export typed TypeScript client or OpenAPI 3.0.3 contract\n  \x1b[33mmake:job <Name>\x1b[0m          Scaffold a background Queue Job\n  \x1b[33mmake:mail <Name>\x1b[0m         Scaffold a Transactional Mail notification\n  \x1b[33mws:serve\x1b[0m                 Start standalone WebSocket broadcasting server\n  \x1b[33mqueue:work\x1b[0m               Start processing background queue jobs\n  \x1b[33mmail:outbox\x1b[0m              Inspect sent transactional emails\n  \x1b[33mtheme:preview\x1b[0m            Preview theme colors, palettes, and font families\n  \x1b[33magent:guide [--json]\x1b[0m     Display agent-native architecture specification\n  \x1b[33mversion\x1b[0m                  Show Terminus CLI version\n\n\x1b[1mExamples:\x1b[0m\n  terminus route:list\n  terminus tinker\n  terminus make:model Product -mc\n  terminus make:controller OrderController --resource\n  terminus make:seeder ProductSeeder\n  terminus migrate:status\n  terminus migrate:rollback\n  terminus schedule:run\n  terminus new my_project\n");
 }
 
 fn print_version() {
@@ -2218,64 +2226,54 @@ fn run_new_project(
     }
 }
 
-fn run_schema(is_json: bool) {
-    let mut spec = terminus::spec::AppSpec::new("Terminus Application");
+fn run_schema(is_json: bool, spec_arg: Option<&str>) {
+    let env_spec = env::var("TERMINUS_APP_SPEC")
+        .ok()
+        .filter(|s| !s.trim().is_empty());
+    let explicit_spec = spec_arg.map(str::to_string).or(env_spec);
+    let default_spec = terminus::spec::DEFAULT_SPEC_PATH;
 
-    // Inspect database tables if terminus.db exists
-    if Path::new("terminus.db").exists() {
-        if let Ok(conn) = rusqlite::Connection::open("terminus.db") {
-            if let Ok(mut stmt) = conn.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'") {
-                if let Ok(table_iter) = stmt.query_map([], |row| row.get::<_, String>(0)) {
-                    for tbl in table_iter.flatten() {
-                        let mut m_spec = terminus::spec::ModelSpec::new(&tbl, &tbl);
-                        if let Ok(mut pragma_stmt) = conn.prepare(&format!("PRAGMA table_info('{}')", tbl)) {
-                            if let Ok(col_iter) = pragma_stmt.query_map([], |r| {
-                                Ok((
-                                    r.get::<_, String>(1)?,
-                                    r.get::<_, String>(2)?,
-                                    r.get::<_, i64>(5)? == 1,
-                                ))
-                            }) {
-                                for col in col_iter.flatten() {
-                                    let mut f = terminus::spec::FieldSpec::new(col.0, "String", col.1);
-                                    if col.2 {
-                                        f = f.primary();
-                                    }
-                                    m_spec = m_spec.add_field(f);
-                                }
-                            }
-                        }
-                        spec.add_model(m_spec);
-                    }
-                }
+    let mut spec = if let Some(path) = explicit_spec {
+        match terminus::spec::AppSpec::read_from_path(&path) {
+            Ok(mut loaded) => {
+                loaded.origin.kind = terminus::spec::OriginKind::CliInspection;
+                loaded.origin.authoritative_app_contract = true;
+                loaded.origin.manifest_path = Some(path);
+                loaded
+            }
+            Err(err) => {
+                eprintln!("[ERROR] {err}");
+                std::process::exit(1);
             }
         }
-    }
-
-    // Inspect routes from src/main.rs
-    if let Ok(main_src) = fs::read_to_string("src/main.rs") {
-        for line in main_src.lines() {
-            let trimmed = line.trim();
-            for method in &["get", "post", "put", "patch", "delete"] {
-                let marker = format!(".{}(", method);
-                if let Some(path) = extract_route_path(trimmed, &marker) {
-                    spec.add_route(terminus::spec::RouteSpec::new(method.to_uppercase(), path, "main"));
-                }
+    } else if Path::new(default_spec).exists() {
+        match terminus::spec::AppSpec::read_from_path(default_spec) {
+            Ok(mut loaded) => {
+                loaded.origin.kind = terminus::spec::OriginKind::CliInspection;
+                loaded.origin.authoritative_app_contract = true;
+                loaded.origin.manifest_path = Some(default_spec.to_string());
+                loaded
+            }
+            Err(err) => {
+                eprintln!("[ERROR] {err}");
+                std::process::exit(1);
             }
         }
-    }
+    } else {
+        let mut fallback = terminus::spec::AppSpec::new("Terminus Application");
+        fallback.origin.kind = terminus::spec::OriginKind::CliInspection;
+        fallback.origin.authoritative_app_contract = false;
+        fallback.add_unavailable(
+            "app_contract",
+            "routes / resources / app_models",
+            format!(
+                "No application-exported AppSpec manifest found (checked '{default_spec}' and --spec / TERMINUS_APP_SPEC). Run your app with `--export-spec {default_spec}` or `TERMINUS_EXPORT_SPEC={default_spec}` to emit authoritative application routes and resources."
+            ),
+        );
+        fallback
+    };
 
-    // Inspect modules in src/modules
-    if let Ok(entries) = fs::read_dir("src/modules") {
-        for entry in entries.flatten() {
-            if entry.path().is_dir() {
-                if let Some(name) = entry.file_name().to_str() {
-                    let title = terminus::resource::headline(name);
-                    spec.add_resource(terminus::spec::ResourceSpec::new(title, name, name));
-                }
-            }
-        }
-    }
+    inspect_database_into_spec(&mut spec);
 
     if is_json {
         println!("{}", spec.to_json_pretty());
@@ -2284,16 +2282,213 @@ fn run_schema(is_json: bool) {
     }
 }
 
-fn extract_route_path(line: &str, marker: &str) -> Option<String> {
-    if let Some(pos) = line.find(marker) {
-        let remainder = line[pos + marker.len()..].trim_start();
-        if let Some(stripped) = remainder.strip_prefix('"') {
-            if let Some(end) = stripped.find('"') {
-                return Some(stripped[..end].to_string());
+fn inspect_database_into_spec(spec: &mut terminus::spec::AppSpec) {
+    let explicit_db_url = env::var("DATABASE_URL")
+        .ok()
+        .filter(|s| !s.trim().is_empty());
+    let db_source = if explicit_db_url.is_some() {
+        "DATABASE_URL"
+    } else {
+        "default (terminus.db)"
+    };
+
+    let config = match terminus::orm::DatabaseConfig::from_env() {
+        Ok(cfg) => cfg,
+        Err(err) => {
+            spec.origin.database_source = Some(format!("{db_source} (invalid)"));
+            spec.add_unavailable("database", db_source, format!("Invalid DATABASE_URL: {err}"));
+            return;
+        }
+    };
+
+    let kind = config.kind();
+    let backend_name = match kind {
+        terminus::backend::DatabaseKind::Sqlite => "sqlite",
+        terminus::backend::DatabaseKind::Postgres => "postgres",
+        terminus::backend::DatabaseKind::Mysql => "mysql",
+    };
+
+    if kind == terminus::backend::DatabaseKind::Sqlite
+        && (config.database == ":memory:" || !Path::new(&config.database).exists())
+    {
+        if explicit_db_url.is_some() {
+            spec.origin.database_backend = Some(backend_name.to_string());
+            spec.origin.database_source = Some(format!("{db_source} (not found)"));
+            spec.add_unavailable(
+                "database",
+                &config.database,
+                format!("Configured SQLite database '{}' does not exist", config.database),
+            );
+        } else {
+            spec.origin.database_source = Some("default (not found)".to_string());
+            spec.add_unavailable(
+                "database",
+                &config.database,
+                "No DATABASE_URL set and default SQLite file 'terminus.db' does not exist",
+            );
+        }
+        return;
+    }
+
+    spec.origin.database_backend = Some(backend_name.to_string());
+    spec.origin.database_source = Some(db_source.to_string());
+
+    let db = match terminus::orm::Database::connect(&config.database) {
+        Ok(db) => db,
+        Err(err) => {
+            spec.origin.database_source = Some(format!("{db_source} (connection failed)"));
+            spec.add_unavailable(
+                "database",
+                backend_name,
+                format!("Failed to connect to {backend_name} database for inspection: {err}"),
+            );
+            return;
+        }
+    };
+
+    let observed_models = match kind {
+        terminus::backend::DatabaseKind::Sqlite => inspect_sqlite_models(&db),
+        terminus::backend::DatabaseKind::Postgres => inspect_postgres_models(&db),
+        terminus::backend::DatabaseKind::Mysql => inspect_mysql_models(&db),
+    };
+
+    match observed_models {
+        Ok(models) => {
+            for model in models {
+                if !spec.models.iter().any(|existing| existing.table == model.table) {
+                    spec.models.push(model);
+                }
             }
         }
+        Err(err) => {
+            spec.add_unavailable(
+                "database_schema",
+                backend_name,
+                format!("Failed to inspect {backend_name} schema: {err}"),
+            );
+        }
     }
-    None
+}
+
+fn col_val<'a>(row: &'a std::collections::HashMap<String, String>, key: &str) -> &'a str {
+    row.get(key)
+        .or_else(|| {
+            let upper = key.to_ascii_uppercase();
+            row.iter()
+                .find(|(k, _)| k.to_ascii_uppercase() == upper)
+                .map(|(_, v)| v)
+        })
+        .map(String::as_str)
+        .unwrap_or("")
+}
+
+fn inspect_sqlite_models(
+    db: &terminus::orm::Database,
+) -> Result<Vec<terminus::spec::ModelSpec>, String> {
+    let tables = db.query_params(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+        &[],
+    )?;
+    let mut models = Vec::new();
+    for row in tables {
+        let tbl = col_val(&row, "name");
+        if tbl.is_empty() {
+            continue;
+        }
+        let mut m_spec = terminus::spec::ModelSpec::from_database(tbl, tbl);
+        let pragma = format!("PRAGMA table_info(\"{}\")", tbl.replace('"', "\"\""));
+        let cols = db.query_params(&pragma, &[])?;
+        for col in cols {
+            let name = col_val(&col, "name");
+            let sql_type = col_val(&col, "type");
+            let notnull = col_val(&col, "notnull") != "0";
+            let pk = col_val(&col, "pk") != "0";
+            let mut f = terminus::spec::FieldSpec::from_database(name, sql_type);
+            if !notnull {
+                f = f.nullable();
+            }
+            if pk {
+                f = f.primary();
+            }
+            m_spec = m_spec.add_field(f);
+        }
+        models.push(m_spec);
+    }
+    Ok(models)
+}
+
+fn inspect_postgres_models(
+    db: &terminus::orm::Database,
+) -> Result<Vec<terminus::spec::ModelSpec>, String> {
+    let rows = db.query_params(
+        "SELECT \
+            c.table_name AS table_name, \
+            c.column_name AS column_name, \
+            c.data_type AS sql_type, \
+            c.is_nullable AS is_nullable, \
+            CASE WHEN BOOL_OR(tc.constraint_type = 'PRIMARY KEY') THEN 'YES' ELSE 'NO' END AS is_primary \
+         FROM information_schema.columns c \
+         LEFT JOIN information_schema.key_column_usage kcu \
+           ON c.table_schema = kcu.table_schema \
+          AND c.table_name = kcu.table_name \
+          AND c.column_name = kcu.column_name \
+         LEFT JOIN information_schema.table_constraints tc \
+           ON kcu.table_schema = tc.table_schema \
+          AND kcu.constraint_name = tc.constraint_name \
+          AND tc.constraint_type = 'PRIMARY KEY' \
+         WHERE c.table_schema = 'public' \
+         GROUP BY c.table_name, c.column_name, c.data_type, c.is_nullable, c.ordinal_position \
+         ORDER BY c.table_name, c.ordinal_position",
+        &[],
+    )?;
+    Ok(collect_grouped_models(&rows))
+}
+
+fn inspect_mysql_models(
+    db: &terminus::orm::Database,
+) -> Result<Vec<terminus::spec::ModelSpec>, String> {
+    let rows = db.query_params(
+        "SELECT \
+            table_name AS table_name, \
+            column_name AS column_name, \
+            column_type AS sql_type, \
+            is_nullable AS is_nullable, \
+            CASE WHEN column_key = 'PRI' THEN 'YES' ELSE 'NO' END AS is_primary \
+         FROM information_schema.columns \
+         WHERE table_schema = DATABASE() \
+         ORDER BY table_name, ordinal_position",
+        &[],
+    )?;
+    Ok(collect_grouped_models(&rows))
+}
+
+fn collect_grouped_models(
+    rows: &[std::collections::HashMap<String, String>],
+) -> Vec<terminus::spec::ModelSpec> {
+    let mut models: Vec<terminus::spec::ModelSpec> = Vec::new();
+    for row in rows {
+        let table = col_val(row, "table_name");
+        let column = col_val(row, "column_name");
+        if table.is_empty() || column.is_empty() {
+            continue;
+        }
+        let sql_type = col_val(row, "sql_type");
+        let nullable = col_val(row, "is_nullable").eq_ignore_ascii_case("YES");
+        let primary = col_val(row, "is_primary").eq_ignore_ascii_case("YES");
+        let mut field = terminus::spec::FieldSpec::from_database(column, sql_type);
+        if nullable {
+            field = field.nullable();
+        }
+        if primary {
+            field = field.primary();
+        }
+        if let Some(last) = models.last_mut().filter(|m| m.table == table) {
+            last.fields.push(field);
+        } else {
+            models.push(terminus::spec::ModelSpec::from_database(table, table).add_field(field));
+        }
+    }
+    models
 }
 
 /// Compact, token-efficient machine context for coding agents: one JSON
@@ -2339,13 +2534,13 @@ fn print_agent_guide(is_json: bool) {
             "conventions": {
                 "architecture": "Vertical Domain Slices (DDD) bundling Model, Repo, Request, Controller, Resource, Migration in src/modules/<slug>/",
                 "validation": "Compile-time type-safe fluent Validator replacing fragile runtime string parsing",
-                "introspection": "Deterministic topology queryable via 'terminus schema --json' or App::spec()",
-                "routing": "Fluent Axum application engine with App::new().port(3000).get(...).module(...)",
+                "introspection": "Versioned AppSpec contract exported via --export-spec / TERMINUS_EXPORT_SPEC and combined with DATABASE_URL inspection via 'terminus schema --json [--spec=...]'",
+                "routing": "Fluent Axum application engine with App::new().port(3000).get(...).group(...).module(...)",
                 "admin": "Auto-discovering admin panels with typed FormMode::SlideOver and Column builders"
             },
             "cli_commands": {
                 "new": "terminus new [project_name] [--preset=...] [--targets=...]",
-                "schema": "terminus schema [--json]",
+                "schema": "terminus schema [--json] [--spec=<path>]",
                 "make_slice": "terminus make:slice <Entity> [--fields='field:type,...']",
                 "make_resource": "terminus make:resource <Entity>",
                 "make_sdk": "terminus make:sdk --lang=ts|swift|kotlin|openapi",
@@ -2375,9 +2570,11 @@ In Terminus, every domain feature lives as an encapsulated, self-contained verti
 To scaffold a complete vertical slice in one command:
   terminus make:slice Order --fields="customer_id:string,total:f64,status:string"
 
-### 2. Deterministic Application Introspection (0 Hallucination)
-To discover models, database tables, routes, and admin resources without scanning dozens of files:
+### 2. Versioned Application Contract Introspection
+Export the running application's authoritative `AppSpec` manifest and combine it with live `DATABASE_URL` schema inspection:
+  TERMINUS_EXPORT_SPEC=.terminus/app-spec.json cargo run --quiet
   terminus schema --json
+  terminus schema --json --spec=.terminus/app-spec.json
 
 ### 3. Type-Safe Compile-Time Request Validation
 Never use stringly-typed rules like "required|email|max:255". Use fluent compile-checked validators:
