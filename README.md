@@ -437,8 +437,9 @@ let app = App::new().rate_limit_with_trusted_proxies(
 ```
 
 A trusted proxy must **append the upstream address** to `X-Forwarded-For`.
-Terminus walks the chain from the right, stops at the first untrusted hop,
-and falls back to the socket peer if the header is malformed. Only the
+Terminus walks the chain from the right and stops at the first untrusted hop,
+ignoring any left-hand entries supplied by the client. If an address in
+the trusted part of the chain is malformed, it falls back to the socket peer. Only the
 listed exact IP addresses are trusted (configure IPv4/IPv6 separately).
 Without a configured proxy, all forwarding headers are ignored. When
 testing the built router in memory without a socket peer, requests share

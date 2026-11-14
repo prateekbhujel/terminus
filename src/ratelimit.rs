@@ -69,34 +69,39 @@ impl RateLimiter {
         peer_ip: Option<IpAddr>,
         headers: &axum::http::HeaderMap,
     ) -> String {
-        let Some(mut client) = peer_ip else {
+        let Some(peer) = peer_ip else {
             // In-process routers have no socket peer: never manufacture an
             // identity from client-controlled headers.
             return "global".to_string();
         };
+        let mut client = peer;
         if !self.trusted_proxies.contains(&client) {
             return client.to_string();
         }
 
-        let mut forwarded = Vec::new();
-        for value in headers.get_all("x-forwarded-for").iter() {
-            let Ok(value) = value.to_str() else {
-                return client.to_string();
-            };
-            for hop in value.split(',') {
-                let Ok(ip) = hop.trim().parse::<IpAddr>() else {
-                    // Do not use a partially parsed or attacker-invented chain.
-                    return client.to_string();
-                };
-                forwarded.push(ip);
-            }
-        }
-
-        for hop in forwarded.into_iter().rev() {
+        // Collect header values so we can traverse multiple X-Forwarded-For
+        // headers in the same order as a single comma-separated chain.
+        let values: Vec<_> = headers.get_all("x-forwarded-for").iter().collect();
+        for value in values.into_iter().rev() {
             if !self.trusted_proxies.contains(&client) {
-                break;
+                return client.to_string();
             }
-            client = hop;
+            let Ok(value) = value.to_str() else {
+                return peer.to_string();
+            };
+            for hop in value.rsplit(',') {
+                if !self.trusted_proxies.contains(&client) {
+                    // Ignore all client-controlled entries to the left of
+                    // the first untrusted address, including malformed ones.
+                    return client.to_string();
+                }
+                let Ok(ip) = hop.trim().parse::<IpAddr>() else {
+                    // An invalid hop within the trusted chain is ambiguous.
+                    // Fall back to the directly observed socket peer.
+                    return peer.to_string();
+                };
+                client = ip;
+            }
         }
         client.to_string()
     }

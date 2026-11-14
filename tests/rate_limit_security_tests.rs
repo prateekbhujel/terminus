@@ -90,9 +90,9 @@ async fn malformed_forwarding_falls_back_to_socket_peer() {
         .rate_limit_with_trusted_proxies(1, Duration::from_secs(60), &proxies)
         .build();
     let peer = Some("127.0.0.1:8080");
-    assert_eq!(status(&router, peer, Some("nonsense, 203.0.113.10")).await, StatusCode::OK);
+    assert_eq!(status(&router, peer, Some("203.0.113.10, nonsense")).await, StatusCode::OK);
     assert_eq!(
-        status(&router, peer, Some("invalid, 203.0.113.11")).await,
+        status(&router, peer, Some("203.0.113.11, invalid")).await,
         StatusCode::TOO_MANY_REQUESTS
     );
 }
@@ -104,5 +104,26 @@ async fn in_memory_requests_cannot_supply_identity_through_headers() {
     assert_eq!(
         status(&router, None, Some("2.2.2.2")).await,
         StatusCode::TOO_MANY_REQUESTS
+    );
+}
+
+#[tokio::test]
+async fn untrusted_malformed_prefix_does_not_poison_shared_proxy_bucket() {
+    let proxies = ["127.0.0.1".parse().unwrap()];
+    let router = test_app()
+        .rate_limit_with_trusted_proxies(1, Duration::from_secs(60), &proxies)
+        .build();
+    let proxy = Some("127.0.0.1:8080");
+    assert_eq!(
+        status(&router, proxy, Some("not-an-ip, 203.0.113.10")).await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        status(&router, proxy, Some("another-malformed-prefix, 203.0.113.10")).await,
+        StatusCode::TOO_MANY_REQUESTS
+    );
+    assert_eq!(
+        status(&router, proxy, Some("not-an-ip, 203.0.113.11")).await,
+        StatusCode::OK
     );
 }
