@@ -2,12 +2,27 @@
 
 ## Unreleased
 
+## 0.0.4 - 2026-11-14
+
 ### Security
 
-- Rate limiting now keys direct clients by the TCP peer, ignoring spoofable forwarding headers.
-- Applications behind a reverse proxy can explicitly allowlist its IP using
-  `App::rate_limit_with_trusted_proxies`; forwarded address chains are parsed
-  from the trusted side rather than trusting the first unverified address.
+- Rate limiting now keys direct clients by the TCP peer (`ConnectInfo<SocketAddr>`), ignoring spoofable forwarding headers (#1).
+- Applications behind a reverse proxy can explicitly allowlist proxy socket IPs using `App::rate_limit_with_trusted_proxies` (`RateLimiter::with_trusted_proxies`); `X-Forwarded-For` chains are parsed from the right and IPv4-mapped IPv6 addresses are canonicalized (#1).
+- PostgreSQL query execution now uses native protocol parameter binding (`ToSql`) with typed `SqlValue` parameters and OID-guided type conversion (`INT2`/`INT4`/`INT8`, `FLOAT4`/`FLOAT8`, `NUMERIC`, `BOOL`, `JSON`/`JSONB`, `BYTEA`, `TEXT[]`/`INT8[]`) instead of string-interpolating `$1, $2, ...` placeholders into SQL text (#3, #5).
+
+### Added
+
+- Versioned `AppSpec` application contract (`contract_version = "1.0"`) with `ContractOrigin`, 3-state `RouteAuth` (`required`, `public`, `unknown`), `UnavailableSpecItem` disclosures for opaque mounts, nested `App::group` path composition, `GET`, `POST`, `PUT`, `PATCH`, and `DELETE` route capture, `AppModule::route_specs()`, and `AdminPanel` resource/route introspection (#2, #6).
+- `App::export_spec()`, `App::write_spec()`, `App::spec_endpoint()`, and build-time/CLI manifest export via `--export-spec [PATH]` or `TERMINUS_EXPORT_SPEC` without binding a network port (#2, #6).
+- `RELEASING.md` release checklist with supported platforms, architectural limitations, compatibility policy, feature matrix checks, and minimal bug reproduction template (#4, #7).
+- `TERMINUS_REQUIRE_EXTERNAL_TESTS` enforcement so external PostgreSQL, MySQL, Redis, and MongoDB integration tests fail loudly if required service URLs are missing (#4, #7).
+
+### Fixed
+
+- `terminus schema [--json] [--spec=<path>]` now loads the exported `AppSpec` manifest and combines it with live `DATABASE_URL` schema inspection across SQLite, PostgreSQL, and MySQL instead of regex-parsing `src/main.rs` or fabricating `"String"` Rust types for database columns (#2, #6).
+- `DatabaseChoice::from_str_loose` now parses `postgres`/`postgresql`/`pg` and `mysql`/`mariadb` instead of returning `Sqlite` for all inputs (#4, #7).
+- Fixed `unreachable_patterns` and `unused_imports` warnings in `src/queue.rs` and `dead_code` warnings in `tests/platform_features_tests.rs` when compiling with `--no-default-features` or individual feature flags (#4, #7).
+- Fixed `Cargo.toml` `documentation` URL (`https://docs.rs/terminus-rs`), `SECURITY.md` supported version table (`0.0.x`), and `README.md` / CLI `agent:guide` documentation alignment (#4, #7).
 
 
 ## 0.0.3 - 2026-11-05

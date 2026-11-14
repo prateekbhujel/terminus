@@ -5,7 +5,7 @@
 Web Admin • SQLite/PostgreSQL/MySQL/Redis/MongoDB • HMAC Sessions • Compile-Time Validation • Deterministic Machine Introspection
 
 [![CI](https://github.com/prateekbhujel/terminus/actions/workflows/rust.yml/badge.svg)](https://github.com/prateekbhujel/terminus/actions/workflows/rust.yml)
-[![Version: 0.0.3](https://img.shields.io/badge/crates.io-v0.0.3-emerald.svg)](https://crates.io/crates/terminus-rs)
+[![Version: 0.0.4](https://img.shields.io/badge/crates.io-v0.0.4-emerald.svg)](https://crates.io/crates/terminus-rs)
 [![Docs](https://img.shields.io/badge/docs.rs-terminus--rs-blue.svg)](https://docs.rs/terminus-rs)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -79,7 +79,7 @@ Add Terminus to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-terminus-rs = "0.0.3"
+terminus-rs = "0.0.4"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -144,7 +144,7 @@ Outputs a versioned JSON contract (`contract_version: "1.0"`) with explicit `ori
 {
   "contract_version": "1.0",
   "framework": "terminus-rs",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "app_name": "Terminus Quickstart",
   "host": "127.0.0.1",
   "port": 3000,
@@ -509,7 +509,7 @@ terminus tinker
 ```
 
 ```text
-Terminus Tinker REPL v0.0.3
+Terminus Tinker REPL v0.0.4
 Database: terminus.db (SQLite) | Type 'help' or 'exit'
 terminus> help
 Terminus Tinker Commands:
@@ -582,7 +582,7 @@ By default, `terminus-rs` enables all optional database, cache, storage, and OAu
 
 ```toml
 [dependencies]
-terminus-rs = { version = "0.0.3", default-features = false }
+terminus-rs = { version = "0.0.4", default-features = false }
 ```
 
 | Feature | Enabled by Default | Dependencies | Capabilities Enabled |
