@@ -17,9 +17,9 @@ async fn status(
     }
     let mut request = builder.body(Body::empty()).unwrap();
     if let Some(peer) = peer {
-        request.extensions_mut().insert(ConnectInfo(
-            peer.parse::<SocketAddr>().unwrap(),
-        ));
+        request
+            .extensions_mut()
+            .insert(ConnectInfo(peer.parse::<SocketAddr>().unwrap()));
     }
     router.clone().oneshot(request).await.unwrap().status()
 }
@@ -32,8 +32,14 @@ fn test_app() -> App {
 async fn direct_clients_cannot_evade_throttle_by_spoofing_forwarded_headers() {
     let router = test_app().rate_limit(2, Duration::from_secs(60)).build();
     let client = Some("203.0.113.10:5000");
-    assert_eq!(status(&router, client, Some("1.1.1.1")).await, StatusCode::OK);
-    assert_eq!(status(&router, client, Some("2.2.2.2")).await, StatusCode::OK);
+    assert_eq!(
+        status(&router, client, Some("1.1.1.1")).await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        status(&router, client, Some("2.2.2.2")).await,
+        StatusCode::OK
+    );
     assert_eq!(
         status(&router, client, Some("3.3.3.3")).await,
         StatusCode::TOO_MANY_REQUESTS
@@ -90,7 +96,10 @@ async fn malformed_forwarding_falls_back_to_socket_peer() {
         .rate_limit_with_trusted_proxies(1, Duration::from_secs(60), &proxies)
         .build();
     let peer = Some("127.0.0.1:8080");
-    assert_eq!(status(&router, peer, Some("203.0.113.10, nonsense")).await, StatusCode::OK);
+    assert_eq!(
+        status(&router, peer, Some("203.0.113.10, nonsense")).await,
+        StatusCode::OK
+    );
     assert_eq!(
         status(&router, peer, Some("203.0.113.11, invalid")).await,
         StatusCode::TOO_MANY_REQUESTS
@@ -119,11 +128,72 @@ async fn untrusted_malformed_prefix_does_not_poison_shared_proxy_bucket() {
         StatusCode::OK
     );
     assert_eq!(
-        status(&router, proxy, Some("another-malformed-prefix, 203.0.113.10")).await,
+        status(
+            &router,
+            proxy,
+            Some("another-malformed-prefix, 203.0.113.10")
+        )
+        .await,
         StatusCode::TOO_MANY_REQUESTS
     );
     assert_eq!(
         status(&router, proxy, Some("not-an-ip, 203.0.113.11")).await,
         StatusCode::OK
     );
+}
+
+#[tokio::test]
+async fn ipv4_mapped_ipv6_peers_and_hops_share_canonical_identity() {
+    let proxies = ["127.0.0.1".parse().unwrap()];
+    let router = test_app()
+        .rate_limit_with_trusted_proxies(1, Duration::from_secs(60), &proxies)
+        .build();
+    assert_eq!(
+        status(
+            &router,
+            Some("[::ffff:127.0.0.1]:8080"),
+            Some("203.0.113.10")
+        )
+        .await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        status(&router, Some("127.0.0.1:8081"), Some("::ffff:203.0.113.10")).await,
+        StatusCode::TOO_MANY_REQUESTS
+    );
+}
+
+#[tokio::test]
+async fn real_tcp_listener_populates_connect_info_and_blocks_spoofed_xff() {
+    let router = test_app().rate_limit(1, Duration::from_secs(60)).build();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            router.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await
+        .unwrap();
+    });
+
+    let send = |xff: &str| {
+        let req = format!(
+            "GET / HTTP/1.1\r\nHost: localhost\r\nX-Forwarded-For: {xff}\r\nConnection: close\r\n\r\n"
+        );
+        async move {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+            stream.write_all(req.as_bytes()).await.unwrap();
+            let mut buf = Vec::new();
+            stream.read_to_end(&mut buf).await.unwrap();
+            String::from_utf8_lossy(&buf).into_owned()
+        }
+    };
+
+    assert!(send("1.1.1.1").await.starts_with("HTTP/1.1 200 OK"));
+    assert!(send("2.2.2.2")
+        .await
+        .starts_with("HTTP/1.1 429 Too Many Requests"));
+    server.abort();
 }

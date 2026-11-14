@@ -32,7 +32,7 @@ impl RateLimiter {
     /// these proxy addresses. Use the actual address of your reverse proxy,
     /// not the addresses of clients connecting through it.
     pub fn with_trusted_proxies(mut self, proxies: &[IpAddr]) -> Self {
-        self.trusted_proxies = proxies.to_vec();
+        self.trusted_proxies = proxies.iter().copied().map(canonical_ip).collect();
         self
     }
 
@@ -69,7 +69,7 @@ impl RateLimiter {
         peer_ip: Option<IpAddr>,
         headers: &axum::http::HeaderMap,
     ) -> String {
-        let Some(peer) = peer_ip else {
+        let Some(peer) = peer_ip.map(canonical_ip) else {
             // In-process routers have no socket peer: never manufacture an
             // identity from client-controlled headers.
             return "global".to_string();
@@ -95,7 +95,7 @@ impl RateLimiter {
                     // the first untrusted address, including malformed ones.
                     return client.to_string();
                 }
-                let Ok(ip) = hop.trim().parse::<IpAddr>() else {
+                let Ok(ip) = hop.trim().parse::<IpAddr>().map(canonical_ip) else {
                     // An invalid hop within the trusted chain is ambiguous.
                     // Fall back to the directly observed socket peer.
                     return peer.to_string();
@@ -104,5 +104,12 @@ impl RateLimiter {
             }
         }
         client.to_string()
+    }
+}
+
+fn canonical_ip(ip: IpAddr) -> IpAddr {
+    match ip {
+        IpAddr::V6(v6) => v6.to_ipv4_mapped().map(IpAddr::V4).unwrap_or(ip),
+        IpAddr::V4(_) => ip,
     }
 }
