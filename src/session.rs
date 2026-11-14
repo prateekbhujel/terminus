@@ -404,7 +404,13 @@ impl SessionStore {
                     kind.placeholder(1),
                     kind.placeholder(2)
                 );
-                let rows = conn.query(&sql, &[id.to_string(), now.to_string()])?;
+                let rows = conn.query_values(
+                    &sql,
+                    &[
+                        crate::backend::SqlValue::Text(id.to_string()),
+                        crate::backend::SqlValue::Int(now),
+                    ],
+                )?;
                 let Some(row) = rows.into_iter().next() else {
                     return Ok(None);
                 };
@@ -529,14 +535,14 @@ impl SessionStore {
                             kind.placeholder(4),
                             kind.placeholder(5)
                         );
-                        guard.execute(
+                        guard.execute_values(
                             &update_sql,
                             &[
-                                data.clone(),
-                                flashes.clone(),
-                                now.to_string(),
-                                expires_at.to_string(),
-                                session.id().to_string(),
+                                crate::backend::SqlValue::Text(data.clone()),
+                                crate::backend::SqlValue::Text(flashes.clone()),
+                                crate::backend::SqlValue::Int(now),
+                                crate::backend::SqlValue::Int(expires_at),
+                                crate::backend::SqlValue::Text(session.id().to_string()),
                             ],
                         )?;
                     } else {
@@ -551,15 +557,15 @@ impl SessionStore {
                             kind.placeholder(5),
                             kind.placeholder(6)
                         );
-                        guard.execute(
+                        guard.execute_values(
                             &insert_sql,
                             &[
-                                session.id().to_string(),
-                                data,
-                                flashes,
-                                session.created_at.to_string(),
-                                now.to_string(),
-                                expires_at.to_string(),
+                                crate::backend::SqlValue::Text(session.id().to_string()),
+                                crate::backend::SqlValue::Text(data),
+                                crate::backend::SqlValue::Text(flashes),
+                                crate::backend::SqlValue::Int(session.created_at),
+                                crate::backend::SqlValue::Int(now),
+                                crate::backend::SqlValue::Int(expires_at),
                             ],
                         )?;
                     }
@@ -656,13 +662,13 @@ impl SessionStore {
                             kind.placeholder(3),
                             kind.placeholder(4)
                         );
-                        guard.execute(
+                        guard.execute_values(
                             &insert_sql,
                             &[
-                                id.to_string(),
-                                now.to_string(),
-                                now.to_string(),
-                                now.to_string(),
+                                crate::backend::SqlValue::Text(id.to_string()),
+                                crate::backend::SqlValue::Int(now),
+                                crate::backend::SqlValue::Int(now),
+                                crate::backend::SqlValue::Int(now),
                             ],
                         )?;
                     }
@@ -719,7 +725,7 @@ impl SessionStore {
                      WHERE revoked = 0 AND last_accessed <= {}",
                     kind.placeholder(1)
                 );
-                conn.execute(&sql, &[cutoff.to_string()])
+                conn.execute_values(&sql, &[crate::backend::SqlValue::Int(cutoff)])
                     .expect("Session pruning failed") as usize
             }
             #[cfg(feature = "redis")]

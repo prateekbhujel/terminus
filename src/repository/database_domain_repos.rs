@@ -162,12 +162,13 @@ impl AuditRepository for DatabaseAuditRepository {
     }
 
     fn find_by_id(&self, id: &str) -> Option<AuditLog> {
+        let parsed_id = id.parse::<i64>().ok()?;
         let sql = format!(
             "SELECT id, user_name, action, resource, record_id, details, timestamp FROM audit_logs WHERE id = {}",
             self.db.kind().placeholder(1)
         );
         self.db
-            .query_params(&sql, &[id.to_string()])
+            .query_values(&sql, &[crate::backend::SqlValue::Int(parsed_id)])
             .ok()?
             .into_iter()
             .next()
@@ -255,12 +256,13 @@ impl OrderRepository for DatabaseOrderRepository {
     }
 
     fn find_by_id(&self, id: &str) -> Option<Order> {
+        let parsed_id = id.parse::<i64>().ok()?;
         let sql = format!(
             "SELECT id, customer, amount, status, date FROM orders WHERE id = {}",
             self.db.kind().placeholder(1)
         );
         self.db
-            .query_params(&sql, &[id.to_string()])
+            .query_values(&sql, &[crate::backend::SqlValue::Int(parsed_id)])
             .ok()?
             .into_iter()
             .next()
@@ -303,13 +305,16 @@ impl OrderRepository for DatabaseOrderRepository {
             ph(3),
             ph(4)
         );
-        let changed = self.db.execute_params(
+        let parsed_id = id
+            .parse::<i64>()
+            .map_err(|_| "Order not found".to_string())?;
+        let changed = self.db.execute_values(
             &sql,
             &[
-                customer,
-                amount,
-                status.as_str().to_string(),
-                id.to_string(),
+                crate::backend::SqlValue::Text(customer),
+                crate::backend::SqlValue::Text(amount),
+                crate::backend::SqlValue::Text(status.as_str().to_string()),
+                crate::backend::SqlValue::Int(parsed_id),
             ],
         )?;
         if changed == 0 {
@@ -319,11 +324,15 @@ impl OrderRepository for DatabaseOrderRepository {
     }
 
     fn delete(&self, id: &str) -> Result<(), String> {
+        let Ok(parsed_id) = id.parse::<i64>() else {
+            return Ok(());
+        };
         let sql = format!(
             "DELETE FROM orders WHERE id = {}",
             self.db.kind().placeholder(1)
         );
-        self.db.execute_params(&sql, &[id.to_string()])?;
+        self.db
+            .execute_values(&sql, &[crate::backend::SqlValue::Int(parsed_id)])?;
         Ok(())
     }
 }

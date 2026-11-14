@@ -1,6 +1,7 @@
 //! Terminus ORM — Active Record ORM in Rust
 //! Models, Active Record pattern, query scopes, relationships (has_many, belongs_to), and schema builders.
 
+pub use crate::backend::SqlValue;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
@@ -665,11 +666,12 @@ impl DatabaseConfig {
     }
 }
 
-/// Ergonomic, parameterized SQL Query object with sync & async execution support for SQLite
+/// Ergonomic, parameterized SQL query object with sync & async execution support.
 #[derive(Debug, Clone, Default)]
 pub struct SqlQuery {
     pub raw_sql: String,
     pub bindings: Vec<String>,
+    pub values: Vec<SqlValue>,
 }
 
 impl SqlQuery {
@@ -677,12 +679,26 @@ impl SqlQuery {
         Self {
             raw_sql: sql.into(),
             bindings: Vec::new(),
+            values: Vec::new(),
         }
     }
 
     pub fn bind<T: ToString>(mut self, val: T) -> Self {
-        self.bindings.push(val.to_string());
+        let text = val.to_string();
+        self.bindings.push(text.clone());
+        self.values.push(SqlValue::Text(text));
         self
+    }
+
+    /// Bind an explicit typed [`SqlValue`] parameter (including SQL `NULL`,
+    /// booleans, integers, floats, JSON, bytes, or arrays).
+    pub fn bind_value<T: Into<SqlValue>>(mut self, val: T) -> Self {
+        self.values.push(val.into());
+        self
+    }
+
+    fn has_explicit_values(&self) -> bool {
+        !self.values.is_empty() && self.values.len() >= self.bindings.len()
     }
 
     pub fn sql(&self) -> &str {
@@ -694,36 +710,35 @@ impl SqlQuery {
     }
 
     pub fn execute_sync(&self, conn: &rusqlite::Connection) -> Result<usize, String> {
-        let params: Vec<&dyn rusqlite::ToSql> = self.bindings.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
-        conn.execute(&self.raw_sql, params.as_slice()).map_err(|e| e.to_string())
+        if self.has_explicit_values() {
+            let values = crate::backend::sqlite_values(&self.values)?;
+            return conn
+                .execute(&self.raw_sql, rusqlite::params_from_iter(values.iter()))
+                .map_err(|e| e.to_string());
+        }
+        conn.execute(&self.raw_sql, rusqlite::params_from_iter(self.bindings.iter()))
+            .map_err(|e| e.to_string())
     }
 
     pub fn insert_sync(&self, conn: &rusqlite::Connection) -> Result<i64, String> {
-        let params: Vec<&dyn rusqlite::ToSql> = self.bindings.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
-        conn.execute(&self.raw_sql, params.as_slice()).map_err(|e| e.to_string())?;
+        self.execute_sync(conn)?;
         Ok(conn.last_insert_rowid())
     }
 
     pub fn fetch_all_sync(&self, conn: &rusqlite::Connection) -> Result<Vec<HashMap<String, String>>, String> {
-        let mut stmt = conn.prepare(&self.raw_sql).map_err(|e| e.to_string())?;
-        let col_names: Vec<String> = stmt.column_names().into_iter().map(|s| s.to_string()).collect();
-        let params: Vec<&dyn rusqlite::ToSql> = self.bindings.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
-        let rows = stmt.query_map(params.as_slice(), |row| {
-            let mut map = HashMap::new();
-            for (idx, name) in col_names.iter().enumerate() {
-                let val: Result<String, _> = row.get(idx);
-                if let Ok(v) = val {
-                    map.insert(name.clone(), v);
-                }
-            }
-            Ok(map)
-        }).map_err(|e| e.to_string())?;
-
-        let mut out = Vec::new();
-        for r in rows {
-            out.push(r.map_err(|e| e.to_string())?);
+        if self.has_explicit_values() {
+            let values = crate::backend::sqlite_values(&self.values)?;
+            return crate::backend::sqlite_query(
+                conn,
+                &self.raw_sql,
+                rusqlite::params_from_iter(values.iter()),
+            );
         }
-        Ok(out)
+        crate::backend::sqlite_query(
+            conn,
+            &self.raw_sql,
+            rusqlite::params_from_iter(self.bindings.iter()),
+        )
     }
 
     /// Asynchronously insert records into the default application database.
@@ -744,7 +759,12 @@ impl SqlQuery {
     /// Asynchronously execute an update/delete SQL command on the default database
     pub async fn execute(&self) -> Result<usize, String> {
         let db = Database::global();
-        if db.kind() != crate::backend::DatabaseKind::Sqlite {
+        if db.kind() != crate::backend::DatabaseKind::Sqlite || self.has_explicit_values() {
+            if self.has_explicit_values() {
+                return db
+                    .execute_values(&self.raw_sql, &self.values)
+                    .map(|rows| rows as usize);
+            }
             return db
                 .execute_params(&self.raw_sql, &self.bindings)
                 .map(|rows| rows as usize);
@@ -755,7 +775,10 @@ impl SqlQuery {
     /// Asynchronously retrieve all records matching the query from the default database
     pub async fn fetch_all(&self) -> Result<Vec<HashMap<String, String>>, String> {
         let db = Database::global();
-        if db.kind() != crate::backend::DatabaseKind::Sqlite {
+        if db.kind() != crate::backend::DatabaseKind::Sqlite || self.has_explicit_values() {
+            if self.has_explicit_values() {
+                return db.query_values(&self.raw_sql, &self.values);
+            }
             return db.query_params(&self.raw_sql, &self.bindings);
         }
         db.with_conn(|conn| self.fetch_all_sync(conn))
@@ -783,6 +806,7 @@ impl SqlQuery {
         let count_sql = format!("SELECT COUNT(*) as total_count FROM ({}) as subquery", self.raw_sql);
         let mut count_query = SqlQuery::new(count_sql);
         count_query.bindings = self.bindings.clone();
+        count_query.values = self.values.clone();
 
         let count_rows = count_query.fetch_all().await?;
         let total = count_rows.first()
@@ -794,6 +818,7 @@ impl SqlQuery {
         let paged_sql = format!("{} LIMIT {} OFFSET {}", self.raw_sql, per_page, offset);
         let mut paged_query = SqlQuery::new(paged_sql);
         paged_query.bindings = self.bindings.clone();
+        paged_query.values = self.values.clone();
 
         let items = paged_query.fetch_all().await?;
         Ok(Paginated::new(items, total, page, per_page))
@@ -1063,6 +1088,8 @@ impl Database {
 
     /// Execute a parameterized statement on any backend. Write SQL with
     /// this backend's placeholders (`?`, or `$1..` on PostgreSQL).
+    ///
+    /// Prefer [`Database::execute_values`] for explicit SQL types or `NULL`.
     pub fn execute_params(&self, sql: &str, params: &[String]) -> Result<u64, String> {
         match &self.conn {
             DbConn::Any(conn) => conn.execute(sql, params),
@@ -1071,8 +1098,19 @@ impl Database {
         }
     }
 
+    /// Execute a statement with explicit typed [`SqlValue`] parameters on any backend.
+    pub fn execute_values(&self, sql: &str, params: &[SqlValue]) -> Result<u64, String> {
+        match &self.conn {
+            DbConn::Any(conn) => conn.execute_values(sql, params),
+            DbConn::Sqlite(conn) => crate::backend::AnyConnection::Sqlite(conn.clone())
+                .execute_values(sql, params),
+        }
+    }
+
     /// Run a parameterized query on any backend; rows map column names to
     /// string values, with SQL NULL omitted.
+    ///
+    /// Prefer [`Database::query_values`] for explicit SQL types or `NULL`.
     pub fn query_params(
         &self,
         sql: &str,
@@ -1082,6 +1120,20 @@ impl Database {
             DbConn::Any(conn) => conn.query(sql, params),
             DbConn::Sqlite(conn) => crate::backend::AnyConnection::Sqlite(conn.clone())
                 .query(sql, params),
+        }
+    }
+
+    /// Run a query with explicit typed [`SqlValue`] parameters on any backend.
+    /// SQL NULL values are omitted from the returned row maps.
+    pub fn query_values(
+        &self,
+        sql: &str,
+        params: &[SqlValue],
+    ) -> Result<Vec<std::collections::HashMap<String, String>>, String> {
+        match &self.conn {
+            DbConn::Any(conn) => conn.query_values(sql, params),
+            DbConn::Sqlite(conn) => crate::backend::AnyConnection::Sqlite(conn.clone())
+                .query_values(sql, params),
         }
     }
 
@@ -1252,7 +1304,14 @@ impl Database {
                 kind.placeholder(3)
             );
             return conn
-                .execute(&sql, &[name.to_string(), batch.to_string(), chrono::Utc::now().to_rfc3339()])
+                .execute_values(
+                    &sql,
+                    &[
+                        SqlValue::Text(name.to_string()),
+                        SqlValue::Int(batch),
+                        SqlValue::Text(chrono::Utc::now().to_rfc3339()),
+                    ],
+                )
                 .map(|_| ())
                 .map_err(Self::backend_error);
         }
@@ -1292,12 +1351,12 @@ impl Database {
                     kind.placeholder(2),
                     kind.placeholder(3)
                 );
-                guard.execute(
+                guard.execute_values(
                     &insert_sql,
                     &[
-                        name.to_string(),
-                        batch.to_string(),
-                        chrono::Utc::now().to_rfc3339(),
+                        SqlValue::Text(name.to_string()),
+                        SqlValue::Int(batch),
+                        SqlValue::Text(chrono::Utc::now().to_rfc3339()),
                     ],
                 )?;
                 Ok(true)
@@ -1376,7 +1435,7 @@ impl Database {
                     kind.placeholder(1)
                 );
                 let names: Vec<String> = guard
-                    .query(&names_sql, &[batch.to_string()])?
+                    .query_values(&names_sql, &[SqlValue::Int(batch)])?
                     .iter()
                     .filter_map(|row| row.get("name").cloned())
                     .collect();

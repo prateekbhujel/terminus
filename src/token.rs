@@ -619,48 +619,19 @@ impl TokenRepository for DatabaseTokenStore {
             ph(7),
             ph(8)
         );
-        // Nullable expires_at goes through a text parameter; empty means NULL
-        // is emulated by storing NULL via a second statement when absent.
-        if let Some(expires) = &expires_at {
-            self.db.execute_params(
-                &sql,
-                &[
-                    id.clone(),
-                    tokenable_type.to_string(),
-                    tokenable_id.to_string(),
-                    name.to_string(),
-                    hashed.clone(),
-                    abilities_json,
-                    expires.clone(),
-                    now.clone(),
-                ],
-            )?;
-        } else {
-            let sql_null = format!(
-                "INSERT INTO personal_access_tokens
-                    (id, tokenable_type, tokenable_id, name, token, abilities, expires_at, created_at)
-                 VALUES ({}, {}, {}, {}, {}, {}, NULL, {})",
-                ph(1),
-                ph(2),
-                ph(3),
-                ph(4),
-                ph(5),
-                ph(6),
-                ph(7)
-            );
-            self.db.execute_params(
-                &sql_null,
-                &[
-                    id.clone(),
-                    tokenable_type.to_string(),
-                    tokenable_id.to_string(),
-                    name.to_string(),
-                    hashed.clone(),
-                    abilities_json,
-                    now.clone(),
-                ],
-            )?;
-        }
+        self.db.execute_values(
+            &sql,
+            &[
+                crate::backend::SqlValue::Text(id.clone()),
+                crate::backend::SqlValue::Text(tokenable_type.to_string()),
+                crate::backend::SqlValue::Text(tokenable_id.to_string()),
+                crate::backend::SqlValue::Text(name.to_string()),
+                crate::backend::SqlValue::Text(hashed.clone()),
+                crate::backend::SqlValue::Text(abilities_json),
+                crate::backend::SqlValue::from(expires_at.clone()),
+                crate::backend::SqlValue::Text(now.clone()),
+            ],
+        )?;
         let token_record = PersonalAccessToken {
             id: id.clone(),
             tokenable_type: tokenable_type.to_string(),

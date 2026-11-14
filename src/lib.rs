@@ -77,7 +77,7 @@ pub mod prelude {
     pub use crate::orm::{
         BelongsTo, Blueprint, Database, DatabaseConfig, DynamicModel, HasMany,
         Model, ModelQuery, Paginated, Schema, Seeder, SeederRegistry,
-        SqlQuery,
+        SqlQuery, SqlValue,
     };
     pub use crate::query;
     pub use crate::db;

@@ -176,9 +176,13 @@ impl ClaimedJob {
             self.placeholder(1),
             self.placeholder(2)
         );
-        let changed = self
-            .conn
-            .execute(&sql, &[self.id.to_string(), self.claim_token.clone()])?;
+        let changed = self.conn.execute_values(
+            &sql,
+            &[
+                crate::backend::SqlValue::Int(self.id),
+                crate::backend::SqlValue::Text(self.claim_token.clone()),
+            ],
+        )?;
         Ok(changed == 1)
     }
 
@@ -199,12 +203,12 @@ impl ClaimedJob {
             self.placeholder(2),
             self.placeholder(3)
         );
-        let changed = self.conn.execute(
+        let changed = self.conn.execute_values(
             &sql,
             &[
-                error.to_string(),
-                self.id.to_string(),
-                self.claim_token.clone(),
+                crate::backend::SqlValue::Text(error.to_string()),
+                crate::backend::SqlValue::Int(self.id),
+                crate::backend::SqlValue::Text(self.claim_token.clone()),
             ],
         )?;
         Ok(changed == 1)
@@ -418,17 +422,17 @@ impl SqliteJobQueue {
         let kind = self.conn.kind();
         let now = Utc::now().to_rfc3339();
         let params = vec![
-            name.to_string(),
-            payload.to_string(),
-            max_attempts.to_string(),
-            now.clone(),
-            now,
+            crate::backend::SqlValue::Text(name.to_string()),
+            crate::backend::SqlValue::Text(payload.to_string()),
+            crate::backend::SqlValue::Int(max_attempts as i64),
+            crate::backend::SqlValue::Text(now.clone()),
+            crate::backend::SqlValue::Text(now),
         ];
         match kind {
             DatabaseKind::Postgres => {
                 let sql = "INSERT INTO _terminus_jobs (name, payload, attempts, max_attempts, status, created_at, available_at)
                      VALUES ($1, $2, 0, $3, 'pending', $4, $5) RETURNING id";
-                let rows = self.conn.query(sql, &params).map_err(queue_error)?;
+                let rows = self.conn.query_values(sql, &params).map_err(queue_error)?;
                 rows.first()
                     .and_then(|row| row.get("id"))
                     .and_then(|id| id.parse::<i64>().ok())
@@ -445,7 +449,7 @@ impl SqliteJobQueue {
                     ph(4),
                     ph(5)
                 );
-                self.conn.execute(&sql, &params).map_err(queue_error)?;
+                self.conn.execute_values(&sql, &params).map_err(queue_error)?;
                 let last_id_sql = match kind {
                     DatabaseKind::Mysql => "SELECT LAST_INSERT_ID() AS id",
                     _ => "SELECT last_insert_rowid() AS id",
@@ -486,7 +490,7 @@ impl SqliteJobQueue {
                    AND lease_expires_at <= {} AND attempts >= max_attempts",
                 ph(1)
             );
-            guard.execute(&reap_sql, &[now_ms.to_string()])?;
+            guard.execute_values(&reap_sql, &[crate::backend::SqlValue::Int(now_ms)])?;
 
             let candidate_sql = format!(
                 "SELECT id, name, payload, attempts, max_attempts FROM _terminus_jobs
@@ -497,9 +501,12 @@ impl SqliteJobQueue {
                 ph(1),
                 ph(2)
             );
-            let candidates = guard.query(
+            let candidates = guard.query_values(
                 &candidate_sql,
-                &[now_rfc, now_ms.to_string()],
+                &[
+                    crate::backend::SqlValue::Text(now_rfc),
+                    crate::backend::SqlValue::Int(now_ms),
+                ],
             )?;
             let Some(row) = candidates.into_iter().next() else {
                 return Ok(None);
@@ -529,13 +536,13 @@ impl SqliteJobQueue {
                 ph(3),
                 ph(4)
             );
-            let changed = guard.execute(
+            let changed = guard.execute_values(
                 &claim_sql,
                 &[
-                    claim_token.clone(),
-                    lease_expires_at.to_string(),
-                    id.to_string(),
-                    now_ms.to_string(),
+                    crate::backend::SqlValue::Text(claim_token.clone()),
+                    crate::backend::SqlValue::Int(lease_expires_at),
+                    crate::backend::SqlValue::Int(id),
+                    crate::backend::SqlValue::Int(now_ms),
                 ],
             )?;
             if changed != 1 {
