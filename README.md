@@ -409,6 +409,50 @@ The resulting `openapi.json` can be plugged directly into any industry-standard 
 
 ---
 
+## Production rate limiting and trusted proxies
+
+Terminus derives rate-limit identities from the **TCP peer address**, not
+client-controlled HTTP headers. This prevents bypassing a throttle by changing
+`X-Forwarded-For` on each request.
+
+```rust
+use std::time::Duration;
+use terminus::prelude::*;
+
+let app = App::new().rate_limit(60, Duration::from_secs(60));
+```
+
+Behind a reverse proxy, explicitly allowlist the proxy's socket IP so
+Terminus can recover the originating client address:
+
+```rust
+use std::time::Duration;
+use terminus::prelude::*;
+
+let app = App::new().rate_limit_with_trusted_proxies(
+    60,
+    Duration::from_secs(60),
+    &["127.0.0.1".parse().unwrap()], // Nginx on the same host
+);
+```
+
+A trusted proxy must **append the upstream address** to `X-Forwarded-For`.
+Terminus walks the chain from the right and stops at the first untrusted hop,
+ignoring any left-hand entries supplied by the client. If an address in
+the trusted part of the chain is malformed, it falls back to the socket peer. Only the
+listed exact IP addresses are trusted (configure IPv4/IPv6 separately).
+Without a configured proxy, all forwarding headers are ignored. When
+testing the built router in memory without a socket peer, requests share
+a single rate-limit bucket.
+
+The built-in limiter stores counters in memory per application process.
+It is not a distributed quota system; for multiple instances, use a
+shared gateway or distributed limiter. It also does not impose an upper
+bound on the number of distinct client buckets, so deploy network-level
+DoS protections for untrusted public traffic.
+
+---
+
 ## Empirical Benchmarks: Terminus vs. Plain Axum
 
 Run the benchmark suite locally:

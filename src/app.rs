@@ -96,11 +96,30 @@ impl App {
         self
     }
 
-    /// Limit each client to `max_requests` per `window`; excess requests
-    /// receive HTTP 429. Clients are keyed by the first `x-forwarded-for`
-    /// hop when present (see `crate::ratelimit`).
+    /// Limit each direct socket peer to `max_requests` per `window`;
+    /// excess requests receive HTTP 429. Forwarded headers are not trusted.
+    /// In-memory requests without a peer share one bucket.
     pub fn rate_limit(mut self, max_requests: usize, window: std::time::Duration) -> Self {
         self.rate_limiter = Some(crate::ratelimit::RateLimiter::new(max_requests, window));
+        self
+    }
+
+    /// Rate-limit clients behind explicitly trusted reverse proxies.
+    ///
+    /// The direct TCP peer must match one of `trusted_proxies` before
+    /// X-Forwarded-For is consulted. Walk the chain from the right, skipping
+    /// known proxy hops; an untrusted client cannot spoof the first hop.
+    /// Configure the proxies to append the actual upstream address.
+    pub fn rate_limit_with_trusted_proxies(
+        mut self,
+        max_requests: usize,
+        window: std::time::Duration,
+        trusted_proxies: &[std::net::IpAddr],
+    ) -> Self {
+        self.rate_limiter = Some(
+            crate::ratelimit::RateLimiter::new(max_requests, window)
+                .with_trusted_proxies(trusted_proxies),
+        );
         self
     }
 
@@ -356,7 +375,8 @@ impl App {
 
         let router = self.build();
         let listener = tokio::net::TcpListener::bind(addr).await?;
-        axum::serve(listener, router)
+        // Preserve the real TCP peer for proxy-aware rate limiting.
+        axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>())
             .with_graceful_shutdown(shutdown_signal())
             .await?;
         Ok(())
@@ -455,7 +475,11 @@ async fn rate_limit_middleware(
     request: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> Response {
-    let key = crate::ratelimit::client_key(request.headers());
+    let peer = request
+        .extensions()
+        .get::<axum::extract::ConnectInfo<SocketAddr>>()
+        .map(|info| info.0.ip());
+    let key = limiter.client_key(peer, request.headers());
     if limiter.hit(&key) {
         next.run(request).await
     } else {
