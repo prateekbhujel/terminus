@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Security
+
+- Rate limiting now keys direct clients by the TCP peer, ignoring spoofable forwarding headers.
+- Applications behind a reverse proxy can explicitly allowlist its IP using
+  `App::rate_limit_with_trusted_proxies`; forwarded address chains are parsed
+  from the trusted side rather than trusting the first unverified address.
+
+
 ## 0.0.3 - 2026-11-05
 
 ### Fixed
