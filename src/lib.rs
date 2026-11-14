@@ -112,7 +112,10 @@ pub mod prelude {
     };
     pub use crate::schedule::{Frequency, Schedule, ScheduledTask};
     pub use crate::session::{FlashBag, Session, SessionConfig, SessionStore};
-    pub use crate::spec::{AppSpec, FieldSpec, ModelSpec, ResourceSpec, RouteSpec, ServiceSpec};
+    pub use crate::spec::{
+        AppSpec, ContractOrigin, FieldSpec, ModelSpec, OriginKind, ResourceSpec, RouteAuth,
+        RouteSpec, ServiceSpec, UnavailableSpecItem, SCHEMA_CONTRACT_VERSION,
+    };
     pub use crate::table::{
         Action, BulkAction, Column, ColumnType, Table, TableAction, TableFilter, TableStyle,
     };

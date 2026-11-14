@@ -97,6 +97,12 @@ pub trait AppModule: Send + Sync {
         axum::Router::new()
     }
 
+    /// Optional declarative route specifications (relative to the module slug)
+    /// exposed for application contract introspection.
+    fn route_specs(&self) -> Vec<crate::spec::RouteSpec> {
+        Vec::new()
+    }
+
     /// Optional Terminus administrative Resource for this module
     fn resource(&self) -> Option<Arc<dyn Resource>> {
         None
