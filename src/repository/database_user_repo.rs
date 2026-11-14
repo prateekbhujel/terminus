@@ -137,11 +137,15 @@ impl UserRepository for DatabaseUserRepository {
     }
 
     fn find_by_id(&self, id: &str) -> Option<User> {
+        let parsed_id = id.parse::<i64>().ok()?;
         let sql = format!(
             "SELECT id, name, email, role, status, created_at FROM users WHERE id = {}",
             self.placeholder(1)
         );
-        let rows = self.db.query_params(&sql, &[id.to_string()]).ok()?;
+        let rows = self
+            .db
+            .query_values(&sql, &[crate::backend::SqlValue::Int(parsed_id)])
+            .ok()?;
         rows.into_iter().next().and_then(|row| Self::row_to_user(&row))
     }
 
@@ -217,14 +221,17 @@ impl UserRepository for DatabaseUserRepository {
             ph(4),
             ph(5)
         );
-        let changed = self.db.execute_params(
+        let parsed_id = id
+            .parse::<i64>()
+            .map_err(|_| "User not found".to_string())?;
+        let changed = self.db.execute_values(
             &sql,
             &[
-                name,
-                email,
-                role.as_str().to_string(),
-                status.as_str().to_string(),
-                id.to_string(),
+                crate::backend::SqlValue::Text(name),
+                crate::backend::SqlValue::Text(email),
+                crate::backend::SqlValue::Text(role.as_str().to_string()),
+                crate::backend::SqlValue::Text(status.as_str().to_string()),
+                crate::backend::SqlValue::Int(parsed_id),
             ],
         )?;
         if changed == 0 {
@@ -234,8 +241,12 @@ impl UserRepository for DatabaseUserRepository {
     }
 
     fn delete(&self, id: &str) -> Result<(), String> {
+        let Ok(parsed_id) = id.parse::<i64>() else {
+            return Ok(());
+        };
         let sql = format!("DELETE FROM users WHERE id = {}", self.placeholder(1));
-        self.db.execute_params(&sql, &[id.to_string()])?;
+        self.db
+            .execute_values(&sql, &[crate::backend::SqlValue::Int(parsed_id)])?;
         Ok(())
     }
 }
