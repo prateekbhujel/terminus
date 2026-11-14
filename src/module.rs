@@ -1,6 +1,7 @@
 //! Terminus Module — Enterprise Modular Architecture (DDD)
 //! Encapsulated domain modules containing DTOs, Models, Repositories, Providers, Controllers, Requests, and Routes.
 
+use crate::resource::Resource;
 use axum::{
     body::to_bytes,
     extract::{FromRequest, Request},
@@ -10,7 +11,6 @@ use axum::{
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::sync::Arc;
-use crate::resource::Resource;
 
 /// Contract for objects and DTOs that can validate themselves.
 pub trait Validate {
@@ -258,7 +258,10 @@ impl ValidationErrors {
     }
 
     pub fn add(&mut self, field: impl Into<String>, message: impl Into<String>) {
-        self.errors.entry(field.into()).or_default().push(message.into());
+        self.errors
+            .entry(field.into())
+            .or_default()
+            .push(message.into());
     }
 
     pub fn has_errors_for(&self, field: &str) -> bool {
@@ -266,7 +269,9 @@ impl ValidationErrors {
     }
 
     pub fn first(&self, field: &str) -> Option<&str> {
-        self.errors.get(field).and_then(|v| v.first().map(|s| s.as_str()))
+        self.errors
+            .get(field)
+            .and_then(|v| v.first().map(|s| s.as_str()))
     }
 
     pub fn all_messages(&self) -> Vec<String> {
@@ -365,7 +370,8 @@ impl<'a> JsonValidator<'a> {
     pub fn require_email(&mut self, field: &str) -> Option<&'a str> {
         let val = self.require_str(field)?;
         if !val.contains('@') || !val.contains('.') {
-            self.errors.add(field, format!("{field} must be a valid email address"));
+            self.errors
+                .add(field, format!("{field} must be a valid email address"));
             return None;
         }
         Some(val)
@@ -374,7 +380,8 @@ impl<'a> JsonValidator<'a> {
     pub fn require_min_len(&mut self, field: &str, min: usize) -> Option<&'a str> {
         let val = self.require_str(field)?;
         if val.len() < min {
-            self.errors.add(field, format!("{field} must be at least {min} characters"));
+            self.errors
+                .add(field, format!("{field} must be at least {min} characters"));
             return None;
         }
         Some(val)
@@ -384,7 +391,8 @@ impl<'a> JsonValidator<'a> {
         match self.data.get(field).and_then(|v| v.as_f64()) {
             Some(n) => Some(n),
             _ => {
-                self.errors.add(field, format!("{field} must be a valid number"));
+                self.errors
+                    .add(field, format!("{field} must be a valid number"));
                 None
             }
         }

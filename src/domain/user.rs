@@ -132,23 +132,18 @@ impl Role {
                 "orders.delete",
                 "audit.view",
             ],
-            Self::Editor => &[
-                "users.view",
-                "orders.view",
-                "orders.create",
-                "orders.edit",
-            ],
-            Self::Member => &[
-                "users.view",
-                "orders.view",
-            ],
+            Self::Editor => &["users.view", "orders.view", "orders.create", "orders.edit"],
+            Self::Member => &["users.view", "orders.view"],
         }
     }
 
     pub fn can(&self, permission: &str) -> bool {
         match self {
             Self::Founder | Self::Superadmin => true,
-            _ => self.permissions().iter().any(|&p| matches_permission(p, permission)),
+            _ => self
+                .permissions()
+                .iter()
+                .any(|&p| matches_permission(p, permission)),
         }
     }
 }
@@ -226,7 +221,12 @@ impl Default for User {
 }
 
 impl User {
-    pub fn new(id: impl Into<String>, name: impl Into<String>, email: impl Into<String>, role: Role) -> Self {
+    pub fn new(
+        id: impl Into<String>,
+        name: impl Into<String>,
+        email: impl Into<String>,
+        role: Role,
+    ) -> Self {
         Self {
             id: id.into(),
             name: name.into(),
@@ -336,11 +336,15 @@ impl User {
     }
 
     pub fn has_direct_permission(&self, perm: &str) -> bool {
-        self.direct_permissions.iter().any(|p| matches_permission(p, perm))
+        self.direct_permissions
+            .iter()
+            .any(|p| matches_permission(p, perm))
     }
 
     pub fn has_explicit_deny(&self, perm: &str) -> bool {
-        self.denied_permissions.iter().any(|p| matches_permission(p, perm))
+        self.denied_permissions
+            .iter()
+            .any(|p| matches_permission(p, perm))
     }
 
     pub fn has_any_permission(&self, perms: &[&str]) -> bool {
@@ -373,8 +377,8 @@ impl User {
                 "{}{}",
                 parts[0].chars().next().unwrap_or('U'),
                 parts.last().and_then(|p| p.chars().next()).unwrap_or(' ')
-            ).to_uppercase(),
+            )
+            .to_uppercase(),
         }
     }
-
 }

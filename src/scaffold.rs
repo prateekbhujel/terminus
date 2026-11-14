@@ -54,7 +54,9 @@ pub enum ProjectPreset {
 impl ProjectPreset {
     pub fn from_str_loose(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
-            "fullstack" | "admin" | "dashboard" | "f" | "universal" | "all" => Some(Self::Fullstack),
+            "fullstack" | "admin" | "dashboard" | "f" | "universal" | "all" => {
+                Some(Self::Fullstack)
+            }
             "backend" | "api" | "headless" | "b" => Some(Self::Backend),
             _ => None,
         }
@@ -121,9 +123,11 @@ pub enum DatabaseChoice {
 
 impl DatabaseChoice {
     pub fn from_str_loose(s: &str) -> Option<Self> {
-        match s.to_lowercase().as_str() {
+        match s.trim().to_lowercase().as_str() {
             "sqlite" | "sqlite3" | "sq" | "default" => Some(Self::Sqlite),
-            _ => Some(Self::Sqlite),
+            "postgres" | "postgresql" | "pg" => Some(Self::Postgres),
+            "mysql" | "mariadb" => Some(Self::Mysql),
+            _ => None,
         }
     }
 
@@ -436,8 +440,12 @@ APP_KEY=
         port = config.port,
         database_url = match config.database {
             DatabaseChoice::Sqlite => "sqlite://terminus.db".to_string(),
-            DatabaseChoice::Postgres => format!("postgres://terminus:change-me@localhost:5432/{}", config.name),
-            DatabaseChoice::Mysql => format!("mysql://terminus:change-me@localhost:3306/{}", config.name),
+            DatabaseChoice::Postgres => format!(
+                "postgres://terminus:change-me@localhost:5432/{}",
+                config.name
+            ),
+            DatabaseChoice::Mysql =>
+                format!("mysql://terminus:change-me@localhost:3306/{}", config.name),
         }
     )
 }

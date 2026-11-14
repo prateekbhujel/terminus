@@ -1,9 +1,6 @@
 //! Terminus Token — Personal Access Token authentication for Rust & Axum
 //! Lightweight personal access token guard with granular abilities and expiration.
 
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
 use axum::{
     async_trait,
     extract::FromRequestParts,
@@ -11,6 +8,9 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 /// SHA-256 using the maintained RustCrypto implementation, returning 32 bytes.
 pub fn sha256(input: &[u8]) -> [u8; 32] {
@@ -31,8 +31,8 @@ pub fn sha256_hex(input: &[u8]) -> String {
 /// HMAC-SHA256 using the maintained RustCrypto implementation.
 pub fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; 32] {
     use hmac::{KeyInit, Mac};
-    let mut mac = hmac::Hmac::<sha2::Sha256>::new_from_slice(key)
-        .expect("HMAC accepts keys of any length");
+    let mut mac =
+        hmac::Hmac::<sha2::Sha256>::new_from_slice(key).expect("HMAC accepts keys of any length");
     mac.update(message);
     mac.finalize().into_bytes().into()
 }
@@ -172,7 +172,11 @@ impl TokenRepository for MemoryTokenStore {
             tokenable_id: tokenable_id.to_string(),
             name: name.to_string(),
             token: hashed,
-            abilities: if abilities.is_empty() { vec!["*".to_string()] } else { abilities },
+            abilities: if abilities.is_empty() {
+                vec!["*".to_string()]
+            } else {
+                abilities
+            },
             last_used_at: None,
             expires_at,
             created_at: chrono::Utc::now().to_rfc3339(),
@@ -225,7 +229,8 @@ impl TokenRepository for MemoryTokenStore {
     fn revoke_all(&self, tokenable_type: &str, tokenable_id: &str) -> Result<usize, String> {
         let mut guard = self.tokens.lock().unwrap();
         let initial_len = guard.len();
-        guard.retain(|_, t| !(t.tokenable_type == tokenable_type && t.tokenable_id == tokenable_id));
+        guard
+            .retain(|_, t| !(t.tokenable_type == tokenable_type && t.tokenable_id == tokenable_id));
         Ok(initial_len - guard.len())
     }
 
@@ -281,7 +286,10 @@ impl TokenRepository for SqliteTokenStore {
         expires_at: Option<String>,
     ) -> Result<NewAccessToken, String> {
         let conn = self.conn.lock().unwrap();
-        let id = format!("{:x}", chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0));
+        let id = format!(
+            "{:x}",
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
+        );
         let plain_secret = format!("{}_{}", id, crate::session::secure_random_hex(32));
         let hashed = sha256_hex(plain_secret.as_bytes());
         let abilities_json = serde_json::to_string(&abilities).unwrap_or_else(|_| "[\"*\"]".into());
@@ -340,7 +348,8 @@ impl TokenRepository for SqliteTokenStore {
         let mut rows = stmt.query(rusqlite::params![id, hashed]).ok()?;
         if let Some(row) = rows.next().ok()? {
             let abilities_str: String = row.get(5).unwrap_or_default();
-            let abilities: Vec<String> = serde_json::from_str(&abilities_str).unwrap_or_else(|_| vec!["*".into()]);
+            let abilities: Vec<String> =
+                serde_json::from_str(&abilities_str).unwrap_or_else(|_| vec!["*".into()]);
             let token = PersonalAccessToken {
                 id: row.get(0).unwrap_or_default(),
                 tokenable_type: row.get(1).unwrap_or_default(),
@@ -366,14 +375,18 @@ impl TokenRepository for SqliteTokenStore {
         conn.execute(
             "UPDATE personal_access_tokens SET last_used_at = ?1 WHERE id = ?2",
             rusqlite::params![now, id],
-        ).map_err(|e| e.to_string())?;
+        )
+        .map_err(|e| e.to_string())?;
         Ok(())
     }
 
     fn revoke_token(&self, id: &str) -> Result<(), String> {
         let conn = self.conn.lock().unwrap();
-        conn.execute("DELETE FROM personal_access_tokens WHERE id = ?1", rusqlite::params![id])
-            .map_err(|e| e.to_string())?;
+        conn.execute(
+            "DELETE FROM personal_access_tokens WHERE id = ?1",
+            rusqlite::params![id],
+        )
+        .map_err(|e| e.to_string())?;
         Ok(())
     }
 
@@ -398,7 +411,8 @@ impl TokenRepository for SqliteTokenStore {
 
         let rows = match stmt.query_map(rusqlite::params![tokenable_type, tokenable_id], |row| {
             let abilities_str: String = row.get(5)?;
-            let abilities: Vec<String> = serde_json::from_str(&abilities_str).unwrap_or_else(|_| vec!["*".into()]);
+            let abilities: Vec<String> =
+                serde_json::from_str(&abilities_str).unwrap_or_else(|_| vec!["*".into()]);
             Ok(PersonalAccessToken {
                 id: row.get(0)?,
                 tokenable_type: row.get(1)?,
@@ -421,7 +435,9 @@ impl TokenRepository for SqliteTokenStore {
 
 /// Trait implemented by Models capable of issuing API tokens
 pub trait HasApiTokens {
-    fn tokenable_type(&self) -> &'static str { "User" }
+    fn tokenable_type(&self) -> &'static str {
+        "User"
+    }
     fn tokenable_id(&self) -> &str;
 
     fn create_token(
@@ -513,7 +529,9 @@ where
         } else {
             Err((
                 StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({ "error": "Unauthenticated. Token is invalid or expired." })),
+                Json(
+                    serde_json::json!({ "error": "Unauthenticated. Token is invalid or expired." }),
+                ),
             )
                 .into_response())
         }
@@ -594,7 +612,10 @@ impl TokenRepository for DatabaseTokenStore {
         abilities: Vec<String>,
         expires_at: Option<String>,
     ) -> Result<NewAccessToken, String> {
-        let id = format!("{:x}", chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0));
+        let id = format!(
+            "{:x}",
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
+        );
         let plain_secret = format!("{}_{}", id, crate::session::secure_random_hex(32));
         let hashed = sha256_hex(plain_secret.as_bytes());
         let abilities = if abilities.is_empty() {
@@ -602,8 +623,7 @@ impl TokenRepository for DatabaseTokenStore {
         } else {
             abilities
         };
-        let abilities_json =
-            serde_json::to_string(&abilities).unwrap_or_else(|_| "[\"*\"]".into());
+        let abilities_json = serde_json::to_string(&abilities).unwrap_or_else(|_| "[\"*\"]".into());
         let now = chrono::Utc::now().to_rfc3339();
         let ph = |i: usize| self.placeholder(i);
         let sql = format!(
@@ -658,11 +678,11 @@ impl TokenRepository for DatabaseTokenStore {
             self.placeholder(1),
             self.placeholder(2)
         );
-        let rows = self
-            .db
-            .query_params(&sql, &[id.to_string(), hashed])
-            .ok()?;
-        let token = rows.into_iter().next().and_then(|row| Self::row_to_token(&row))?;
+        let rows = self.db.query_params(&sql, &[id.to_string(), hashed]).ok()?;
+        let token = rows
+            .into_iter()
+            .next()
+            .and_then(|row| Self::row_to_token(&row))?;
         if token.is_expired() {
             return None;
         }
@@ -710,7 +730,10 @@ impl TokenRepository for DatabaseTokenStore {
             self.placeholder(2)
         );
         self.db
-            .query_params(&sql, &[tokenable_type.to_string(), tokenable_id.to_string()])
+            .query_params(
+                &sql,
+                &[tokenable_type.to_string(), tokenable_id.to_string()],
+            )
             .unwrap_or_default()
             .iter()
             .filter_map(Self::row_to_token)

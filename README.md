@@ -509,25 +509,25 @@ terminus tinker
 ```
 
 ```text
-================================================================================
-  TERMINUS TINKER — Interactive Database Console & REPL
-  DB: CONNECTED (SQLite) | terminus.db
-================================================================================
-Commands: tables | schema <table> | routes | seed | hash <password> | exit
-
->>> tables
-[users, orders, personal_access_tokens, _terminus_cache, _terminus_jobs]
-
->>> SELECT id, name, email, role FROM users LIMIT 2;
-+----+-------------+--------------------+------------+
-| id | name        | email              | role       |
-+----+-------------+--------------------+------------+
-| 1  | Admin User  | admin@example.com  | superadmin |
-| 2  | Test Member | member@example.com | member     |
-+----+-------------+--------------------+------------+
-
->>> hash secretpassword
-$pbkdf2-sha256$i=10000$<random-salt>$<derived-key>
+Terminus Tinker REPL v0.0.3
+Database: terminus.db (SQLite) | Type 'help' or 'exit'
+terminus> help
+Terminus Tinker Commands:
+  tables, .tables         List all database tables and record counts
+  schema <table>          Describe table columns and definitions
+  routes                  Show all registered web & API routes
+  hash <password>         Compute password hash (Argon2 / SHA-256)
+  seed                    Run database seeders
+  SELECT ...              Execute any arbitrary SQL query
+  exit, quit              Exit Tinker REPL
+terminus> SELECT id, name, email, role FROM users LIMIT 2;
+  id | name | email | role
+  ------------------------------------------------------------
+  1 | Admin User | admin@example.com | Superadmin
+  2 | Test Member | member@example.com | Member
+  (2 rows returned)
+terminus> hash secretpassword
+Hash: $argon2id$v=19$m=19456,t=2,p=1$<random-salt>$<derived-key>
 ```
 
 You can also execute one-off expressions directly from the CLI without entering the interactive prompt:
@@ -548,7 +548,7 @@ terminus <command> [options]
 
 | Command | Description |
 |---|---|
-| `new [name] [--preset=...]` | Scaffold a new project (interactive wizard or flags) |
+| `new [name] [--preset=...] [--db=...] [--port=...] [--yes]` | Scaffold a new project (interactive wizard or flags) |
 | `schema [--json] [--spec=...]` | Read exported `AppSpec` manifest and live `DATABASE_URL` schema |
 | `route:list \| routes` | List registered web routes, admin resources, and API endpoints |
 | `tinker [--execute=...]` | Interactive database REPL console with query evaluation |
@@ -576,15 +576,53 @@ terminus <command> [options]
 
 ---
 
+## Cargo Feature Matrix
+
+By default, `terminus-rs` enables all optional database, cache, storage, and OAuth integrations. To build a minimal SQLite-only binary with no external driver dependencies, disable default features:
+
+```toml
+[dependencies]
+terminus-rs = { version = "0.0.3", default-features = false }
+```
+
+| Feature | Enabled by Default | Dependencies | Capabilities Enabled |
+|---|---|---|---|
+| `default` | Yes | All features below | Full SQLite, PostgreSQL, MySQL, Redis, MongoDB, S3, and OAuth stack |
+| (none / `--no-default-features`) | Always available | `rusqlite` (bundled), `axum`, `tokio`, `argon2` | Core HTTP/Axum app, AdminPanel, RBAC, Argon2id auth, embedded SQLite ORM/migrations/sessions/queue/cache, local storage, WebSockets, and `terminus` CLI |
+| `postgres` | Yes | `postgres` | Native PostgreSQL driver (`postgres://` / `postgresql://`) for `Database`, migrations, repositories, `SessionStore`, and `PersistentJobQueue` |
+| `mysql` | Yes | `mysql` | Native MySQL / MariaDB driver (`mysql://` / `mariadb://`) for `Database`, migrations, repositories, `SessionStore`, and `PersistentJobQueue` |
+| `redis` | Yes | `redis` | `RedisCache` and Redis-backed `SessionStore` / `SessionConfig::redis` (`redis://`) |
+| `mongodb` | Yes | `mongodb`, `futures-util` | `MongoStore` JSON document collections (`mongodb://`) |
+| `s3` | Yes | `ureq` | `S3Storage` object storage driver with AWS SigV4 request signing and presigned URLs |
+| `oauth` | Yes | `ureq` | `OAuthClient` authorization URL generation, code exchange, and userinfo requests |
+
+---
+
 ## Verification & Tests
 
-Run the integration and generated-application regression tests:
+Run the self-contained unit, integration, quickstart, and generated-application regression tests:
 
 ```bash
 cargo test
+cargo test --no-default-features
 ```
 
-The suite covers HTTP request isolation, session and flash cookie roundtrips, SQLite persistence, queue errors, audit logging, and RBAC. It also compiles all generated application presets against the current framework using locally cached dependencies.
+The default test run requires no external daemons: it exercises HTTP request isolation, session and flash cookie roundtrips, SQLite persistence (ORM, migrations, sessions, queue leases, repositories), local S3/OAuth mock servers, audit logging, RBAC, `examples/quickstart` `AppSpec` export, every scaffold preset (`fullstack` and `backend`), and the `README.md` quickstart snippet.
+
+### External Service Integration Tests
+
+Live server-backend tests in `tests/database_backend_tests.rs`, `tests/fullstack_backend_tests.rs`, `tests/stores_features_tests.rs`, and `tests/schema_contract_tests.rs` connect to real database servers when their environment variables are set:
+
+| Environment Variable | Target Service | Test Files Exercised |
+|---|---|---|
+| `TERMINUS_TEST_POSTGRES_URL` | PostgreSQL 14+ (`postgres://...`) | `database_backend_tests`, `fullstack_backend_tests`, `schema_contract_tests` |
+| `TERMINUS_TEST_MYSQL_URL` | MySQL 8.0+ / MariaDB (`mysql://...`) | `database_backend_tests`, `fullstack_backend_tests`, `schema_contract_tests` |
+| `TERMINUS_TEST_REDIS_URL` | Redis 6+ (`redis://...`) | `fullstack_backend_tests`, `stores_features_tests` |
+| `TERMINUS_TEST_MONGO_URL` | MongoDB 6+ (`mongodb://...`) | `stores_features_tests` |
+
+Set `TERMINUS_REQUIRE_EXTERNAL_TESTS=1` (for PostgreSQL, MySQL, and Redis), `TERMINUS_REQUIRE_EXTERNAL_TESTS=all` (including MongoDB), or a comma-separated list such as `TERMINUS_REQUIRE_EXTERNAL_TESTS=postgres,mysql` to make missing external service URLs fail the test run loudly instead of skipping.
+
+See [RELEASING.md](RELEASING.md) for the release readiness checklist, supported platforms, known limitations, and bug report reproduction template.
 
 ---
 

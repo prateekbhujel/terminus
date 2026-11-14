@@ -129,9 +129,7 @@ fn render_form_fields(form: &Form, prefix: &str) -> String {
             FieldType::Select { options } => {
                 let mut opts_html = String::new();
                 for (val, label) in options {
-                    opts_html.push_str(&format!(
-                        r#"<option value="{val}">{label}</option>"#
-                    ));
+                    opts_html.push_str(&format!(r#"<option value="{val}">{label}</option>"#));
                 }
                 format!(
                     r#"<select id="{input_id}" name="{name}" {required} class="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-xs text-zinc-200 focus:outline-none focus:border-zinc-600 transition-colors font-sans">{opts_html}</select>"#,
@@ -143,7 +141,10 @@ fn render_form_fields(form: &Form, prefix: &str) -> String {
             }
             FieldType::SearchableSelect { options } => {
                 let first_val = options.first().map(|(v, _)| v.as_str()).unwrap_or("");
-                let first_lbl = options.first().map(|(_, l)| l.as_str()).unwrap_or("Select...");
+                let first_lbl = options
+                    .first()
+                    .map(|(_, l)| l.as_str())
+                    .unwrap_or("Select...");
                 let mut items_html = String::new();
                 for (val, label) in options {
                     items_html.push_str(&format!(
@@ -238,7 +239,11 @@ fn render_form_fields(form: &Form, prefix: &str) -> String {
                     </div>"#,
                     input_id = input_id,
                     name = f.name,
-                    placeholder = if placeholder.is_empty() { "Scan barcode or enter SKU..." } else { placeholder },
+                    placeholder = if placeholder.is_empty() {
+                        "Scan barcode or enter SKU..."
+                    } else {
+                        placeholder
+                    },
                     required = required
                 )
             }

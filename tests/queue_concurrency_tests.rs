@@ -14,12 +14,10 @@ impl TempDb {
             .unwrap()
             .as_nanos();
         let sequence = COUNTER.fetch_add(1, Ordering::SeqCst);
-        Self(
-            std::env::temp_dir().join(format!(
-                "terminus_queue_{}_{unique}_{sequence}.db",
-                std::process::id()
-            )),
-        )
+        Self(std::env::temp_dir().join(format!(
+            "terminus_queue_{}_{unique}_{sequence}.db",
+            std::process::id()
+        )))
     }
 
     fn path(&self) -> String {
@@ -76,7 +74,10 @@ fn handler_runs_without_holding_the_shared_connection_lock() {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(pending, 0, "the claimed job is already committed as processing");
+        assert_eq!(
+            pending, 0,
+            "the claimed job is already committed as processing"
+        );
         Ok(())
     });
 
@@ -91,7 +92,10 @@ fn second_worker_cannot_claim_a_live_lease() {
     let second = db.queue();
     let id = first.push("exclusive_job", "{}").unwrap();
 
-    let claim = first.reserve().unwrap().expect("first worker claims the job");
+    let claim = first
+        .reserve()
+        .unwrap()
+        .expect("first worker claims the job");
     assert_eq!(second.reserve().unwrap().map(|job| job.id), None);
     assert_eq!(
         second.work_one(|_, _| panic!("live lease was claimed twice")),
@@ -128,7 +132,9 @@ fn expired_claim_is_recovered_by_another_worker() {
 fn exhausted_expired_claim_fails_instead_of_retrying_forever() {
     let db = TempDb::new();
     let queue = db.queue();
-    queue.push_with_max_attempts("final_attempt_job", "{}", 1).unwrap();
+    queue
+        .push_with_max_attempts("final_attempt_job", "{}", 1)
+        .unwrap();
 
     let claim = queue.reserve().unwrap().unwrap();
     assert_eq!(claim.attempts, 1);
@@ -198,10 +204,13 @@ fn legacy_schema_upgrades_without_losing_pending_jobs() {
 
     let queue = db.queue();
     assert_eq!(queue.stats().pending, 1);
-    assert_eq!(queue.work_one(|name, _| {
-        assert_eq!(name, "legacy_job");
-        Ok(())
-    }), Ok(Some(true)));
+    assert_eq!(
+        queue.work_one(|name, _| {
+            assert_eq!(name, "legacy_job");
+            Ok(())
+        }),
+        Ok(Some(true))
+    );
     assert_eq!(queue.stats().processed, 1);
 }
 
@@ -220,16 +229,14 @@ fn concurrent_workers_each_claim_jobs_once() {
         .map(|_| {
             let worker = db.queue();
             let handled = handled.clone();
-            std::thread::spawn(move || {
-                loop {
-                    match worker.work_one(|_, _| {
-                        handled.fetch_add(1, Ordering::SeqCst);
-                        Ok(())
-                    }) {
-                        Ok(Some(_)) => continue,
-                        Ok(None) => break,
-                        Err(error) => panic!("worker failed: {error}"),
-                    }
+            std::thread::spawn(move || loop {
+                match worker.work_one(|_, _| {
+                    handled.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                }) {
+                    Ok(Some(_)) => continue,
+                    Ok(None) => break,
+                    Err(error) => panic!("worker failed: {error}"),
                 }
             })
         })

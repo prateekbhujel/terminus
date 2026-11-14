@@ -53,10 +53,24 @@ impl Resource for InventoryResource {
     fn table(&self) -> Table {
         Table::new()
             .column(Column::text("sku").label("SKU").searchable().sortable())
-            .column(Column::text("title").label("Product Title").searchable().editable())
+            .column(
+                Column::text("title")
+                    .label("Product Title")
+                    .searchable()
+                    .editable(),
+            )
             .column(Column::text("barcode").label("Barcode").searchable())
-            .column(Column::text("bin_location").label("Warehouse Bin").editable_select(vec!["A-01-01", "A-01-02", "B-04-12", "C-09-03"]))
-            .column(Column::numeric("stock_qty").label("In Stock").sortable().editable())
+            .column(
+                Column::text("bin_location")
+                    .label("Warehouse Bin")
+                    .editable_select(vec!["A-01-01", "A-01-02", "B-04-12", "C-09-03"]),
+            )
+            .column(
+                Column::numeric("stock_qty")
+                    .label("In Stock")
+                    .sortable()
+                    .editable(),
+            )
             .column(Column::numeric("unit_price").label("Unit Price").sortable())
             .action(Action::view())
             .action(Action::edit())
@@ -65,27 +79,29 @@ impl Resource for InventoryResource {
     }
 
     fn form(&self) -> Form {
-        Form::new()
-            .section(
-                FormSection::make("Stock Identifiers")
-                    .schema(vec![
-                        FormField::text("sku").required().placeholder("SKU-1001"),
-                        FormField::text("title").required().placeholder("Wireless Barcode Scanner"),
-                        FormField::barcode("barcode").required().placeholder("890102030405"),
-                        FormField::select("bin_location", vec![
-                            ("A-01-01", "Aisle A, Rack 01, Shelf 01"),
-                            ("B-04-12", "Aisle B, Rack 04, Shelf 12"),
-                        ]),
-                    ])
-            )
-            .section(
-                FormSection::make("Pricing & Layout")
-                    .schema(vec![
-                        FormField::number("stock_qty").required().placeholder("100"),
-                        FormField::number("unit_price").required().prefix("$"),
-                        FormField::rich_text("description").helper_text("Warehouse handling notes and hazmat compliance."),
-                    ])
-            )
+        let stock_section = FormSection::make("Stock Identifiers").schema(vec![
+            FormField::text("sku").required().placeholder("SKU-1001"),
+            FormField::text("title")
+                .required()
+                .placeholder("Wireless Barcode Scanner"),
+            FormField::barcode("barcode")
+                .required()
+                .placeholder("890102030405"),
+            FormField::select(
+                "bin_location",
+                vec![
+                    ("A-01-01", "Aisle A, Rack 01, Shelf 01"),
+                    ("B-04-12", "Aisle B, Rack 04, Shelf 12"),
+                ],
+            ),
+        ]);
+        let pricing_section = FormSection::make("Pricing & Layout").schema(vec![
+            FormField::number("stock_qty").required().placeholder("100"),
+            FormField::number("unit_price").required().prefix("$"),
+            FormField::rich_text("description")
+                .helper_text("Warehouse handling notes and hazmat compliance."),
+        ]);
+        Form::new().section(stock_section).section(pricing_section)
     }
 
     fn fetch_rows(&self, query: &QueryState) -> (Vec<RowData>, usize) {
@@ -94,7 +110,11 @@ impl Resource for InventoryResource {
 
         if !query.search.is_empty() {
             let s = query.search.to_lowercase();
-            filtered.retain(|i| i.title.to_lowercase().contains(&s) || i.sku.to_lowercase().contains(&s) || i.barcode.contains(&s));
+            filtered.retain(|i| {
+                i.title.to_lowercase().contains(&s)
+                    || i.sku.to_lowercase().contains(&s)
+                    || i.barcode.contains(&s)
+            });
         }
 
         let total = filtered.len();
@@ -109,7 +129,10 @@ impl Resource for InventoryResource {
                 map.insert("bin_location".to_string(), i.bin_location);
                 map.insert("stock_qty".to_string(), i.stock_qty.to_string());
                 map.insert("unit_price".to_string(), format!("${:.2}", i.unit_price));
-                RowData { id: map["id"].clone(), values: map }
+                RowData {
+                    id: map["id"].clone(),
+                    values: map,
+                }
             })
             .collect();
 
@@ -144,27 +167,57 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 2. Client SDK & OpenAPI Specification
     let sdk_gen = SdkGenerator::new("Terminus Logistics", "2.1.0")
-        .type_schema("WmsItem", vec![
-            ("sku", "string"),
-            ("title", "string"),
-            ("stockQty", "number"),
-            ("binLocation", "string"),
-        ])
-        .endpoint("GET", "/api/inventory", None, "WmsItem[]", "Fetch real-time warehouse catalog")
-        .endpoint("POST", "/api/orders/pack", Some("{ orderId: string, sku: string }"), "{ status: string }", "Mark order item packed");
+        .type_schema(
+            "WmsItem",
+            vec![
+                ("sku", "string"),
+                ("title", "string"),
+                ("stockQty", "number"),
+                ("binLocation", "string"),
+            ],
+        )
+        .endpoint(
+            "GET",
+            "/api/inventory",
+            None,
+            "WmsItem[]",
+            "Fetch real-time warehouse catalog",
+        )
+        .endpoint(
+            "POST",
+            "/api/orders/pack",
+            Some("{ orderId: string, sku: string }"),
+            "{ status: string }",
+            "Mark order item packed",
+        );
 
-    println!("  [Client Generator] Generated TypeScript SDK ({} bytes)", sdk_gen.to_typescript().len());
+    println!(
+        "  [Client Generator] Generated TypeScript SDK ({} bytes)",
+        sdk_gen.to_typescript().len()
+    );
     let openapi_json = sdk_gen.to_openapi_json();
-    println!("  [OpenAPI 3.0] Exported OpenAPI specification ({} endpoints)", openapi_json["paths"].as_object().map(|p| p.len()).unwrap_or(0));
+    println!(
+        "  [OpenAPI 3.0] Exported OpenAPI specification ({} endpoints)",
+        openapi_json["paths"]
+            .as_object()
+            .map(|p| p.len())
+            .unwrap_or(0)
+    );
 
     // 3. Persistent SQLite Cache & Job Queue
     let cache = SqliteCache::new("terminus.db")?;
     cache.put("wms:status", "operational", Some(3600));
     let cached_status = cache.get("wms:status").unwrap_or_default();
-    println!("  [Cache] Persistent SQLite cache operational status: {}", cached_status);
+    println!(
+        "  [Cache] Persistent SQLite cache operational status: {}",
+        cached_status
+    );
 
     let queue = SqliteJobQueue::new("terminus.db")?;
-    let job_id = queue.push("wms:dispatch_order", r#"{"orderId":"ORD-8910","sku":"KB-9002-RGB"}"#)?;
+    let job_id = queue.push(
+        "wms:dispatch_order",
+        r#"{"orderId":"ORD-8910","sku":"KB-9002-RGB"}"#,
+    )?;
     println!("  [Queue] Enqueued dispatch job: {}", job_id);
 
     // 4. Transactional Mailer
@@ -172,12 +225,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let message = MailMessage::to("customer@example.com")
         .subject("Order #8910 Dispatch Confirmed")
         .line("Your order #8910 has been packed and scheduled for dispatch.")
-        .action("Track Shipment", "https://logistics.example.com/orders/8910");
+        .action(
+            "Track Shipment",
+            "https://logistics.example.com/orders/8910",
+        );
     mailer.send(message)?;
-    println!("  [Mailer] Sent notification email (mailbox size: {})", mailer.sent_messages().len());
+    println!(
+        "  [Mailer] Sent notification email (mailbox size: {})",
+        mailer.sent_messages().len()
+    );
 
     // 5. Build the Terminus Web Application
-    let inv_resource = InventoryResource { items: inventory_items };
+    let inv_resource = InventoryResource {
+        items: inventory_items,
+    };
     let admin = AdminPanel::new()
         .brand_name("Terminus Logistics")
         .resource(inv_resource);

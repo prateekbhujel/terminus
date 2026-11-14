@@ -1,12 +1,18 @@
-use std::sync::{Arc, RwLock};
 use crate::domain::{Order, OrderStatus};
 use crate::resource::QueryState;
+use std::sync::{Arc, RwLock};
 
 pub trait OrderRepository: Send + Sync {
     fn list(&self, query: &QueryState) -> (Vec<Order>, usize);
     fn find_by_id(&self, id: &str) -> Option<Order>;
     fn save(&self, order: Order) -> Result<String, String>;
-    fn update(&self, id: &str, customer: String, amount: String, status: OrderStatus) -> Result<(), String>;
+    fn update(
+        &self,
+        id: &str,
+        customer: String,
+        amount: String,
+        status: OrderStatus,
+    ) -> Result<(), String>;
     fn delete(&self, id: &str) -> Result<(), String>;
 }
 
@@ -104,7 +110,11 @@ impl OrderRepository for InMemoryOrderRepository {
 
         let total = list.len();
         let page = if query.page == 0 { 1 } else { query.page };
-        let per_page = if query.per_page == 0 { 8 } else { query.per_page };
+        let per_page = if query.per_page == 0 {
+            8
+        } else {
+            query.per_page
+        };
         let skip = (page - 1) * per_page;
 
         let paginated = list.into_iter().skip(skip).take(per_page).collect();
@@ -123,7 +133,13 @@ impl OrderRepository for InMemoryOrderRepository {
         Ok(id)
     }
 
-    fn update(&self, id: &str, customer: String, amount: String, status: OrderStatus) -> Result<(), String> {
+    fn update(
+        &self,
+        id: &str,
+        customer: String,
+        amount: String,
+        status: OrderStatus,
+    ) -> Result<(), String> {
         let mut store = self.storage.write().unwrap();
         if let Some(o) = store.iter_mut().find(|o| o.id == id) {
             o.customer = customer;

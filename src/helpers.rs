@@ -3,15 +3,15 @@
 //! authorization checks (`can()`, `cannot()`), request inspection (`request()`),
 //! control flow (`abort()`, `abort_if()`, `abort_unless()`), and system utilities.
 
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::sync::{OnceLock, RwLock};
-use chrono::{DateTime, Utc};
-use axum::http::StatusCode;
-use axum::response::{IntoResponse, Response};
 use crate::domain::User;
 pub use crate::session::{secure_random_bytes, secure_random_hex};
 use crate::session::{Session, SessionConfig, SessionStore};
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
+use chrono::{DateTime, Utc};
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::sync::{OnceLock, RwLock};
 
 tokio::task_local! {
     pub static TASK_USER: Option<User>;
@@ -30,21 +30,32 @@ struct RequestContext {
     session_error: Option<String>,
 }
 
-pub(crate) async fn with_request_context<F>(request: RequestInfo, session_config: Option<SessionConfig>, future: F) -> (F::Output, Option<Session>, Option<String>)
+pub(crate) async fn with_request_context<F>(
+    request: RequestInfo,
+    session_config: Option<SessionConfig>,
+    future: F,
+) -> (F::Output, Option<Session>, Option<String>)
 where
     F: std::future::Future,
 {
     let session_cookie = request.header("cookie").map(str::to_string);
     let context = RequestContext {
-        user: None, request: Some(request), session_cookie, session: None, response_session: None,
-        session_config, session_error: None,
+        user: None,
+        request: Some(request),
+        session_cookie,
+        session: None,
+        response_session: None,
+        session_config,
+        session_error: None,
     };
-    REQUEST_CONTEXT.scope(RefCell::new(context), async move {
-        let output = future.await;
-        let session = REQUEST_CONTEXT.with(|context| context.borrow().response_session.clone());
-        let error = REQUEST_CONTEXT.with(|context| context.borrow().session_error.clone());
-        (output, session, error)
-    }).await
+    REQUEST_CONTEXT
+        .scope(RefCell::new(context), async move {
+            let output = future.await;
+            let session = REQUEST_CONTEXT.with(|context| context.borrow().response_session.clone());
+            let error = REQUEST_CONTEXT.with(|context| context.borrow().session_error.clone());
+            (output, session, error)
+        })
+        .await
 }
 
 pub(crate) fn has_request_context() -> bool {
@@ -54,13 +65,26 @@ pub(crate) fn has_request_context() -> bool {
 /// Returns the active application's store, or the process-local default outside
 /// an application scope. Authentication must use the same store as middleware.
 pub fn session_store() -> std::sync::Arc<SessionStore> {
-    REQUEST_CONTEXT.try_with(|context| context.borrow().session_config.as_ref().map(SessionConfig::store))
-        .ok().flatten().unwrap_or_else(SessionStore::global_arc)
+    REQUEST_CONTEXT
+        .try_with(|context| {
+            context
+                .borrow()
+                .session_config
+                .as_ref()
+                .map(SessionConfig::store)
+        })
+        .ok()
+        .flatten()
+        .unwrap_or_else(SessionStore::global_arc)
 }
 
 /// Formats a response cookie using the active application's signing and HTTPS settings.
 pub fn session_cookie_header(session: &Session) -> String {
-    if let Some(config) = REQUEST_CONTEXT.try_with(|context| context.borrow().session_config.clone()).ok().flatten() {
+    if let Some(config) = REQUEST_CONTEXT
+        .try_with(|context| context.borrow().session_config.clone())
+        .ok()
+        .flatten()
+    {
         return config.cookie_header(session);
     }
     if let Some(key) = config("app.key").or_else(|| env("APP_KEY")) {
@@ -71,13 +95,26 @@ pub fn session_cookie_header(session: &Session) -> String {
 
 /// Removes the root-scoped session cookie using the application's HTTPS setting.
 pub fn clear_session_cookie_header() -> String {
-    REQUEST_CONTEXT.try_with(|context| context.borrow().session_config.as_ref()
-        .map(SessionConfig::clear_cookie_header)).ok().flatten()
-        .unwrap_or_else(|| "terminus_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax".to_string())
+    REQUEST_CONTEXT
+        .try_with(|context| {
+            context
+                .borrow()
+                .session_config
+                .as_ref()
+                .map(SessionConfig::clear_cookie_header)
+        })
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| {
+            "terminus_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax".to_string()
+        })
 }
 
 pub(crate) fn explicit_session() -> Option<Session> {
-    let session = TASK_SESSION.try_with(|session| session.clone()).ok().flatten()?;
+    let session = TASK_SESSION
+        .try_with(|session| session.clone())
+        .ok()
+        .flatten()?;
     let _ = REQUEST_CONTEXT.try_with(|context| {
         context.borrow_mut().response_session = Some(session.clone());
     });
@@ -88,28 +125,40 @@ pub(crate) fn scoped_session() -> Option<Session> {
     if let Some(session) = explicit_session() {
         return Some(session);
     }
-    REQUEST_CONTEXT.try_with(|context| {
-        let mut context = context.borrow_mut();
-        let session = if let Some(session) = &context.session { session.clone() } else {
-            let loaded = if let Some(config) = &context.session_config {
-                config.cookie_id(context.session_cookie.as_deref()).and_then(|id| {
-                    id.map(|id| config.store.load(&id)).transpose().map(|session| session.flatten())
-                })
-            } else { Ok(Some(crate::session::resolve_session_cookie(context.session_cookie.as_deref()))) };
-            match loaded {
-                Ok(session) => session.unwrap_or_default(),
-                Err(error) => {
-                    context.session_error = Some(error);
-                    let session = Session::new();
-                    session.invalidate();
-                    session
+    REQUEST_CONTEXT
+        .try_with(|context| {
+            let mut context = context.borrow_mut();
+            let session = if let Some(session) = &context.session {
+                session.clone()
+            } else {
+                let loaded = if let Some(config) = &context.session_config {
+                    config
+                        .cookie_id(context.session_cookie.as_deref())
+                        .and_then(|id| {
+                            id.map(|id| config.store.load(&id))
+                                .transpose()
+                                .map(|session| session.flatten())
+                        })
+                } else {
+                    Ok(Some(crate::session::resolve_session_cookie(
+                        context.session_cookie.as_deref(),
+                    )))
+                };
+                match loaded {
+                    Ok(session) => session.unwrap_or_default(),
+                    Err(error) => {
+                        context.session_error = Some(error);
+                        let session = Session::new();
+                        session.invalidate();
+                        session
+                    }
                 }
-            }
-        };
-        context.session = Some(session.clone());
-        context.response_session = Some(session.clone());
-        session
-    }).ok()
+            };
+            context.session = Some(session.clone());
+            context.response_session = Some(session.clone());
+            session
+        })
+        .ok()
 }
 
 thread_local! {
@@ -150,10 +199,14 @@ impl RequestInfo {
         let mut req = Self::new(method, path);
         for (k, v) in headers {
             if let Ok(val) = v.to_str() {
-                req.headers.insert(k.as_str().to_lowercase(), val.to_string());
+                req.headers
+                    .insert(k.as_str().to_lowercase(), val.to_string());
             }
         }
-        if let Some(ip) = req.header("x-forwarded-for").or_else(|| req.header("x-real-ip")) {
+        if let Some(ip) = req
+            .header("x-forwarded-for")
+            .or_else(|| req.header("x-real-ip"))
+        {
             req.ip = ip.to_string();
         }
         req
@@ -175,7 +228,8 @@ impl RequestInfo {
     }
 
     pub fn input(&self, key: &str) -> Option<&str> {
-        self.query.get(key)
+        self.query
+            .get(key)
             .or_else(|| self.query.get(&crate::resource::to_camel_case(key)))
             .or_else(|| self.query.get(&crate::resource::to_snake_case(key)))
             .map(|s| s.as_str())
@@ -190,15 +244,21 @@ impl RequestInfo {
     }
 
     pub fn is_json(&self) -> bool {
-        self.header("content-type").map(|c| c.contains("application/json")).unwrap_or(false)
+        self.header("content-type")
+            .map(|c| c.contains("application/json"))
+            .unwrap_or(false)
     }
 
     pub fn wants_json(&self) -> bool {
-        self.header("accept").map(|a| a.contains("application/json")).unwrap_or(false)
+        self.header("accept")
+            .map(|a| a.contains("application/json"))
+            .unwrap_or(false)
     }
 
     pub fn is_ajax(&self) -> bool {
-        self.header("x-requested-with").map(|h| h.eq_ignore_ascii_case("xmlhttprequest")).unwrap_or(false)
+        self.header("x-requested-with")
+            .map(|h| h.eq_ignore_ascii_case("xmlhttprequest"))
+            .unwrap_or(false)
     }
 }
 
@@ -212,7 +272,8 @@ impl RequestAccessor {
     }
 
     pub fn input(&self, key: &str) -> Option<String> {
-        self.info().and_then(|r| r.input(key).map(|s| s.to_string()))
+        self.info()
+            .and_then(|r| r.input(key).map(|s| s.to_string()))
     }
 
     pub fn has(&self, key: &str) -> bool {
@@ -224,15 +285,20 @@ impl RequestAccessor {
     }
 
     pub fn method(&self) -> String {
-        self.info().map(|r| r.method).unwrap_or_else(|| "GET".to_string())
+        self.info()
+            .map(|r| r.method)
+            .unwrap_or_else(|| "GET".to_string())
     }
 
     pub fn ip(&self) -> String {
-        self.info().map(|r| r.ip).unwrap_or_else(|| "127.0.0.1".to_string())
+        self.info()
+            .map(|r| r.ip)
+            .unwrap_or_else(|| "127.0.0.1".to_string())
     }
 
     pub fn header(&self, key: &str) -> Option<String> {
-        self.info().and_then(|r| r.header(key).map(|s| s.to_string()))
+        self.info()
+            .and_then(|r| r.header(key).map(|s| s.to_string()))
     }
 
     pub fn is_json(&self) -> bool {
@@ -266,7 +332,10 @@ pub fn request_info() -> Option<RequestInfo> {
 
 /// Sets the current HTTP request info for the active request or thread.
 pub fn set_current_request(req: Option<RequestInfo>) {
-    if REQUEST_CONTEXT.try_with(|context| context.borrow_mut().request = req.clone()).is_err() {
+    if REQUEST_CONTEXT
+        .try_with(|context| context.borrow_mut().request = req.clone())
+        .is_err()
+    {
         THREAD_REQUEST.with(|c| *c.borrow_mut() = req);
     }
 }
@@ -276,7 +345,8 @@ pub fn with_request<F, R>(req: RequestInfo, f: F) -> R
 where
     F: FnOnce() -> R,
 {
-    let prev = REQUEST_CONTEXT.try_with(|context| context.borrow().request.clone())
+    let prev = REQUEST_CONTEXT
+        .try_with(|context| context.borrow().request.clone())
         .unwrap_or_else(|_| THREAD_REQUEST.with(|context| context.borrow().clone()));
     set_current_request(Some(req));
     let result = f();
@@ -312,7 +382,10 @@ pub fn user_id() -> Option<String> {
 
 /// Sets the authenticated user for the active request or thread.
 pub fn set_current_user(user: Option<User>) {
-    if REQUEST_CONTEXT.try_with(|context| context.borrow_mut().user = user.clone()).is_err() {
+    if REQUEST_CONTEXT
+        .try_with(|context| context.borrow_mut().user = user.clone())
+        .is_err()
+    {
         THREAD_USER.with(|c| *c.borrow_mut() = user);
     }
 }
@@ -322,7 +395,8 @@ pub fn with_user<F, R>(user: User, f: F) -> R
 where
     F: FnOnce() -> R,
 {
-    let prev = REQUEST_CONTEXT.try_with(|context| context.borrow().user.clone())
+    let prev = REQUEST_CONTEXT
+        .try_with(|context| context.borrow().user.clone())
         .unwrap_or_else(|_| THREAD_USER.with(|context| context.borrow().clone()));
     set_current_user(Some(user));
     let result = f();
@@ -345,11 +419,14 @@ pub fn session() -> Session {
 
 /// Sets the current `Session` for the active request or thread.
 pub fn set_current_session(sess: Option<Session>) {
-    if REQUEST_CONTEXT.try_with(|context| {
-        let mut context = context.borrow_mut();
-        context.session = sess.clone();
-        context.response_session = sess.clone();
-    }).is_err() {
+    if REQUEST_CONTEXT
+        .try_with(|context| {
+            let mut context = context.borrow_mut();
+            context.session = sess.clone();
+            context.response_session = sess.clone();
+        })
+        .is_err()
+    {
         THREAD_SESSION.with(|c| *c.borrow_mut() = sess);
     }
 }
@@ -372,7 +449,10 @@ where
 {
     type Rejection = AbortError;
 
-    async fn from_request_parts(parts: &mut axum::http::request::Parts, _state: &S) -> std::result::Result<Self, Self::Rejection> {
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        _state: &S,
+    ) -> std::result::Result<Self, Self::Rejection> {
         if let Some(user) = parts.extensions.get::<User>() {
             return Ok(AuthUser(user.clone()));
         }
@@ -396,7 +476,10 @@ where
 {
     type Rejection = std::convert::Infallible;
 
-    async fn from_request_parts(parts: &mut axum::http::request::Parts, state: &S) -> std::result::Result<Self, Self::Rejection> {
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        state: &S,
+    ) -> std::result::Result<Self, Self::Rejection> {
         match AuthUser::from_request_parts(parts, state).await {
             Ok(AuthUser(u)) => Ok(MaybeAuthUser(Some(u))),
             Err(_) => Ok(MaybeAuthUser(None)),
@@ -426,7 +509,10 @@ pub fn csrf_token() -> String {
 
 /// Generates a hidden HTML input element containing the active session's CSRF token for web forms.
 pub fn csrf_field() -> String {
-    format!(r#"<input type="hidden" name="_csrf_token" value="{}">"#, csrf_token())
+    format!(
+        r#"<input type="hidden" name="_csrf_token" value="{}">"#,
+        csrf_token()
+    )
 }
 
 /// Primary authorization check: determines if the current authenticated user can perform an action.
@@ -457,10 +543,16 @@ pub fn is_superadmin() -> bool {
 
 /// Checks if the current authenticated user is an Admin, Superadmin, or Founder.
 pub fn is_admin() -> bool {
-    current_user().map(|u| matches!(
-        u.role,
-        crate::domain::Role::Founder | crate::domain::Role::Superadmin | crate::domain::Role::Admin
-    )).unwrap_or(false)
+    current_user()
+        .map(|u| {
+            matches!(
+                u.role,
+                crate::domain::Role::Founder
+                    | crate::domain::Role::Superadmin
+                    | crate::domain::Role::Admin
+            )
+        })
+        .unwrap_or(false)
 }
 
 /// HTTP abort error with status code and error message.
@@ -531,8 +623,7 @@ impl From<rusqlite::Error> for AbortError {
 
 impl IntoResponse for AbortError {
     fn into_response(self) -> Response {
-        let status = StatusCode::from_u16(self.status)
-            .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        let status = StatusCode::from_u16(self.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
 
         let wants_json = request_info()
             .map(|r| r.wants_json() || r.is_json())
@@ -641,7 +732,9 @@ pub fn config(key: &str) -> Option<String> {
         }
     }
     let env_key = format!("TERMINUS_{}", key.to_uppercase().replace('.', "_"));
-    std::env::var(&env_key).ok().or_else(|| std::env::var(key.to_uppercase().replace('.', "_")).ok())
+    std::env::var(&env_key)
+        .ok()
+        .or_else(|| std::env::var(key.to_uppercase().replace('.', "_")).ok())
 }
 
 /// Sets an in-memory configuration value.
@@ -655,8 +748,6 @@ pub fn config_set(key: impl Into<String>, val: impl Into<String>) {
 pub fn env(key: &str) -> Option<String> {
     std::env::var(key).ok()
 }
-
-
 
 #[macro_export]
 macro_rules! abort_if {
@@ -758,4 +849,3 @@ pub fn redirect(to_url: impl AsRef<str>) -> RedirectResponse {
 
 /// Standard Terminus Result type for controller handlers returning AbortError on failure by default
 pub type Result<T, E = AbortError> = std::result::Result<T, E>;
-

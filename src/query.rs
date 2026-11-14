@@ -47,25 +47,29 @@ impl Query {
 
     /// Add an equality where clause
     pub fn where_eq(mut self, column: impl Into<String>, value: impl Into<String>) -> Self {
-        self.wheres.push(WhereClause::Eq(column.into(), value.into()));
+        self.wheres
+            .push(WhereClause::Eq(column.into(), value.into()));
         self
     }
 
     /// Add a not-equals where clause
     pub fn where_neq(mut self, column: impl Into<String>, value: impl Into<String>) -> Self {
-        self.wheres.push(WhereClause::Neq(column.into(), value.into()));
+        self.wheres
+            .push(WhereClause::Neq(column.into(), value.into()));
         self
     }
 
     /// Add a LIKE where clause
     pub fn where_like(mut self, column: impl Into<String>, pattern: impl Into<String>) -> Self {
-        self.wheres.push(WhereClause::Like(column.into(), pattern.into()));
+        self.wheres
+            .push(WhereClause::Like(column.into(), pattern.into()));
         self
     }
 
     /// Add a greater-than clause
     pub fn where_gt(mut self, column: impl Into<String>, value: impl Into<String>) -> Self {
-        self.wheres.push(WhereClause::Gt(column.into(), value.into()));
+        self.wheres
+            .push(WhereClause::Gt(column.into(), value.into()));
         self
     }
 

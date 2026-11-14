@@ -130,7 +130,9 @@ impl Hash {
     /// Fallible password hashing for applications that need to report entropy or hashing errors.
     pub fn try_make(password: &str) -> Result<String, argon2::password_hash::Error> {
         use argon2::password_hash::PasswordHasher;
-        argon2::Argon2::default().hash_password(password.as_bytes()).map(|hash| hash.to_string())
+        argon2::Argon2::default()
+            .hash_password(password.as_bytes())
+            .map(|hash| hash.to_string())
     }
 
     /// Create a legacy PBKDF2 hash for compatibility. Use `make` for new passwords.
@@ -148,20 +150,29 @@ impl Hash {
         if hash.starts_with("$argon2id$") {
             use argon2::password_hash::{phc::PasswordHash, PasswordVerifier};
             return PasswordHash::new(hash).ok().is_some_and(|parsed| {
-                argon2::Argon2::default().verify_password(password.as_bytes(), &parsed).is_ok()
+                argon2::Argon2::default()
+                    .verify_password(password.as_bytes(), &parsed)
+                    .is_ok()
             });
         }
         let parts: Vec<&str> = hash.split('$').collect();
-        if parts.len() != 5 || !parts[0].is_empty() || parts[1] != "pbkdf2-sha256"
-            || parts[3].is_empty() || parts[3].len() > 1024
-            || parts[4].len() != 64 || !parts[4].bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        if parts.len() != 5
+            || !parts[0].is_empty()
+            || parts[1] != "pbkdf2-sha256"
+            || parts[3].is_empty()
+            || parts[3].len() > 1024
+            || parts[4].len() != 64
+            || !parts[4].bytes().all(|byte| byte.is_ascii_hexdigit())
+        {
             return false;
         }
-        let Some(iterations) = parts[2].strip_prefix("i=")
+        let Some(iterations) = parts[2]
+            .strip_prefix("i=")
             .and_then(|value| value.parse::<u32>().ok())
-            .filter(|iterations| (1..=1_000_000).contains(iterations)) else {
-                return false;
-            };
+            .filter(|iterations| (1..=1_000_000).contains(iterations))
+        else {
+            return false;
+        };
 
         let salt = parts[3];
         let expected_hex = parts[4];

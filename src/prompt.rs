@@ -31,7 +31,14 @@ pub fn text(
 
     loop {
         // Render Prompt
-        print!("{}[?]{} {}{}{}", ansi::CYAN, ansi::RESET, ansi::BOLD, label, ansi::RESET);
+        print!(
+            "{}[?]{} {}{}{}",
+            ansi::CYAN,
+            ansi::RESET,
+            ansi::BOLD,
+            label,
+            ansi::RESET
+        );
 
         if let Some(d) = default {
             print!(" {}[{}]", ansi::GRAY, d);
@@ -47,17 +54,35 @@ pub fn text(
 
         if trimmed.is_empty() {
             if let Some(d) = default {
-                println!("  {}[OK]{} {}{}{}", ansi::GREEN, ansi::RESET, ansi::GRAY, d, ansi::RESET);
+                println!(
+                    "  {}[OK]{} {}{}{}",
+                    ansi::GREEN,
+                    ansi::RESET,
+                    ansi::GRAY,
+                    d,
+                    ansi::RESET
+                );
                 return Ok(d.to_string());
             } else if required {
-                println!("  {}[ERROR] Required field. Please enter a value.{}", ansi::RED, ansi::RESET);
+                println!(
+                    "  {}[ERROR] Required field. Please enter a value.{}",
+                    ansi::RED,
+                    ansi::RESET
+                );
                 continue;
             } else {
                 return Ok(String::new());
             }
         }
 
-        println!("  {}[OK]{} {}{}{}", ansi::GREEN, ansi::RESET, ansi::GRAY, trimmed, ansi::RESET);
+        println!(
+            "  {}[OK]{} {}{}{}",
+            ansi::GREEN,
+            ansi::RESET,
+            ansi::GRAY,
+            trimmed,
+            ansi::RESET
+        );
         return Ok(trimmed.to_string());
     }
 }
@@ -68,7 +93,14 @@ pub fn password(label: &str, required: bool) -> io::Result<String> {
     let stdin = io::stdin();
 
     loop {
-        print!("{}[?]{} {}{}{}: ", ansi::CYAN, ansi::RESET, ansi::BOLD, label, ansi::RESET);
+        print!(
+            "{}[?]{} {}{}{}: ",
+            ansi::CYAN,
+            ansi::RESET,
+            ansi::BOLD,
+            label,
+            ansi::RESET
+        );
         stdout.flush()?;
 
         let mut input = String::new();
@@ -76,12 +108,23 @@ pub fn password(label: &str, required: bool) -> io::Result<String> {
         let trimmed = input.trim();
 
         if trimmed.is_empty() && required {
-            println!("  {}[ERROR] Password cannot be empty.{}", ansi::RED, ansi::RESET);
+            println!(
+                "  {}[ERROR] Password cannot be empty.{}",
+                ansi::RED,
+                ansi::RESET
+            );
             continue;
         }
 
         let masked = "*".repeat(trimmed.len());
-        println!("  {}[OK]{} {}{}{}", ansi::GREEN, ansi::RESET, ansi::GRAY, masked, ansi::RESET);
+        println!(
+            "  {}[OK]{} {}{}{}",
+            ansi::GREEN,
+            ansi::RESET,
+            ansi::GRAY,
+            masked,
+            ansi::RESET
+        );
         return Ok(trimmed.to_string());
     }
 }
@@ -92,7 +135,17 @@ pub fn confirm(label: &str, default: bool) -> io::Result<bool> {
     let stdin = io::stdin();
 
     let hint = if default { "[Y/n]" } else { "[y/N]" };
-    print!("{}[?]{} {}{}{} {}{}{}: ", ansi::CYAN, ansi::RESET, ansi::BOLD, label, ansi::RESET, ansi::GRAY, hint, ansi::RESET);
+    print!(
+        "{}[?]{} {}{}{} {}{}{}: ",
+        ansi::CYAN,
+        ansi::RESET,
+        ansi::BOLD,
+        label,
+        ansi::RESET,
+        ansi::GRAY,
+        hint,
+        ansi::RESET
+    );
     stdout.flush()?;
 
     let mut input = String::new();
@@ -101,10 +154,19 @@ pub fn confirm(label: &str, default: bool) -> io::Result<bool> {
 
     let result = if trimmed.is_empty() {
         default
-    } else { trimmed == "y" || trimmed == "yes" || trimmed == "1" || trimmed == "true" };
+    } else {
+        trimmed == "y" || trimmed == "yes" || trimmed == "1" || trimmed == "true"
+    };
 
     let display_str = if result { "yes" } else { "no" };
-    println!("  {}[OK]{} {}{}{}", ansi::GREEN, ansi::RESET, ansi::GRAY, display_str, ansi::RESET);
+    println!(
+        "  {}[OK]{} {}{}{}",
+        ansi::GREEN,
+        ansi::RESET,
+        ansi::GRAY,
+        display_str,
+        ansi::RESET
+    );
     Ok(result)
 }
 
@@ -115,13 +177,23 @@ pub fn select<'a, T: Display>(
     default_index: usize,
 ) -> io::Result<&'a str> {
     if options.is_empty() {
-        return Err(io::Error::new(io::ErrorKind::InvalidInput, "Options list cannot be empty"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Options list cannot be empty",
+        ));
     }
 
     let mut stdout = io::stdout();
     let stdin = io::stdin();
 
-    println!("{}[?]{} {}{}{}", ansi::CYAN, ansi::RESET, ansi::BOLD, label, ansi::RESET);
+    println!(
+        "{}[?]{} {}{}{}",
+        ansi::CYAN,
+        ansi::RESET,
+        ansi::BOLD,
+        label,
+        ansi::RESET
+    );
     for (i, (key, text)) in options.iter().enumerate() {
         let is_default = i == default_index;
         let marker = if is_default {
@@ -130,11 +202,25 @@ pub fn select<'a, T: Display>(
             "  ".to_string()
         };
         let num = format!("{}[{}]{}", ansi::GRAY, i + 1, ansi::RESET);
-        println!("  {}{} {} {}({}){}", marker, num, text, ansi::DIM, key, ansi::RESET);
+        println!(
+            "  {}{} {} {}({}){}",
+            marker,
+            num,
+            text,
+            ansi::DIM,
+            key,
+            ansi::RESET
+        );
     }
 
     loop {
-        print!("  Enter choice {}[1-{}, default: {}]{}: ", ansi::GRAY, options.len(), default_index + 1, ansi::RESET);
+        print!(
+            "  Enter choice {}[1-{}, default: {}]{}: ",
+            ansi::GRAY,
+            options.len(),
+            default_index + 1,
+            ansi::RESET
+        );
         stdout.flush()?;
 
         let mut input = String::new();
@@ -143,25 +229,57 @@ pub fn select<'a, T: Display>(
 
         if trimmed.is_empty() {
             let (key, text) = &options[default_index];
-            println!("  {}[OK]{} Selected: {}{}{} ({})", ansi::GREEN, ansi::RESET, ansi::BOLD, text, ansi::RESET, key);
+            println!(
+                "  {}[OK]{} Selected: {}{}{} ({})",
+                ansi::GREEN,
+                ansi::RESET,
+                ansi::BOLD,
+                text,
+                ansi::RESET,
+                key
+            );
             return Ok(key);
         }
 
         if let Ok(idx) = trimmed.parse::<usize>() {
             if idx >= 1 && idx <= options.len() {
                 let (key, text) = &options[idx - 1];
-                println!("  {}[OK]{} Selected: {}{}{} ({})", ansi::GREEN, ansi::RESET, ansi::BOLD, text, ansi::RESET, key);
+                println!(
+                    "  {}[OK]{} Selected: {}{}{} ({})",
+                    ansi::GREEN,
+                    ansi::RESET,
+                    ansi::BOLD,
+                    text,
+                    ansi::RESET,
+                    key
+                );
                 return Ok(key);
             }
         }
 
         // Also allow matching by key directly
-        if let Some((key, text)) = options.iter().find(|(k, _)| k.eq_ignore_ascii_case(trimmed)) {
-            println!("  {}[OK]{} Selected: {}{}{} ({})", ansi::GREEN, ansi::RESET, ansi::BOLD, text, ansi::RESET, key);
+        if let Some((key, text)) = options
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(trimmed))
+        {
+            println!(
+                "  {}[OK]{} Selected: {}{}{} ({})",
+                ansi::GREEN,
+                ansi::RESET,
+                ansi::BOLD,
+                text,
+                ansi::RESET,
+                key
+            );
             return Ok(key);
         }
 
-        println!("  {}[ERROR] Invalid selection. Please enter 1-{} or the option key.{}", ansi::RED, options.len(), ansi::RESET);
+        println!(
+            "  {}[ERROR] Invalid selection. Please enter 1-{} or the option key.{}",
+            ansi::RED,
+            options.len(),
+            ansi::RESET
+        );
     }
 }
 
@@ -174,8 +292,19 @@ pub fn multiselect<'a, T: Display>(
     let mut stdout = io::stdout();
     let stdin = io::stdin();
 
-    println!("{}[?]{} {}{}{}", ansi::CYAN, ansi::RESET, ansi::BOLD, label, ansi::RESET);
-    println!("  {}Enter comma-separated numbers (e.g. 1, 3) or press Enter for defaults:{}", ansi::DIM, ansi::RESET);
+    println!(
+        "{}[?]{} {}{}{}",
+        ansi::CYAN,
+        ansi::RESET,
+        ansi::BOLD,
+        label,
+        ansi::RESET
+    );
+    println!(
+        "  {}Enter comma-separated numbers (e.g. 1, 3) or press Enter for defaults:{}",
+        ansi::DIM,
+        ansi::RESET
+    );
 
     for (i, (key, text)) in options.iter().enumerate() {
         let is_selected = defaults.contains(key);
@@ -184,7 +313,16 @@ pub fn multiselect<'a, T: Display>(
         } else {
             format!("{}[ ]{}", ansi::GRAY, ansi::RESET)
         };
-        println!("  {} {} {}. {} {}({}){}", check, ansi::GRAY, i + 1, text, ansi::DIM, key, ansi::RESET);
+        println!(
+            "  {} {} {}. {} {}({}){}",
+            check,
+            ansi::GRAY,
+            i + 1,
+            text,
+            ansi::DIM,
+            key,
+            ansi::RESET
+        );
     }
 
     print!("  Choices: ");
@@ -200,7 +338,12 @@ pub fn multiselect<'a, T: Display>(
             .filter(|(k, _)| defaults.contains(k))
             .map(|(k, _)| *k)
             .collect();
-        println!("  {}[OK]{} Selected: {:?}", ansi::GREEN, ansi::RESET, selected);
+        println!(
+            "  {}[OK]{} Selected: {:?}",
+            ansi::GREEN,
+            ansi::RESET,
+            selected
+        );
         return Ok(selected);
     }
 
@@ -216,7 +359,12 @@ pub fn multiselect<'a, T: Display>(
         }
     }
 
-    println!("  {}[OK]{} Selected: {:?}", ansi::GREEN, ansi::RESET, selected);
+    println!(
+        "  {}[OK]{} Selected: {:?}",
+        ansi::GREEN,
+        ansi::RESET,
+        selected
+    );
     Ok(selected)
 }
 
@@ -230,7 +378,14 @@ pub fn spin<R, F: FnOnce() -> R>(message: &str, task: F) -> R {
 
     // Clear line and print checkmark
     print!("\r\x1b[2K");
-    println!("{}[OK]{} {}{}{}", ansi::GREEN, ansi::RESET, ansi::BOLD, message, ansi::RESET);
+    println!(
+        "{}[OK]{} {}{}{}",
+        ansi::GREEN,
+        ansi::RESET,
+        ansi::BOLD,
+        message,
+        ansi::RESET
+    );
     let _ = stdout.flush();
 
     res
@@ -252,7 +407,11 @@ pub fn table(headers: &[&str], rows: &[Vec<String>]) {
     }
 
     // Top border
-    let sep: String = widths.iter().map(|w| "-".repeat(w + 2)).collect::<Vec<_>>().join("+");
+    let sep: String = widths
+        .iter()
+        .map(|w| "-".repeat(w + 2))
+        .collect::<Vec<_>>()
+        .join("+");
     println!("+{}+", sep);
 
     // Header row
@@ -294,5 +453,11 @@ pub fn error(message: impl AsRef<str>) {
 
 /// Print a note block
 pub fn note(title: impl AsRef<str>, message: impl AsRef<str>) {
-    println!("\n  {}{}{}: {}", ansi::BOLD, title.as_ref(), ansi::RESET, message.as_ref());
+    println!(
+        "\n  {}{}{}: {}",
+        ansi::BOLD,
+        title.as_ref(),
+        ansi::RESET,
+        message.as_ref()
+    );
 }

@@ -1,6 +1,6 @@
-use std::sync::{Arc, RwLock};
 use crate::domain::audit::AuditLog;
 use crate::resource::QueryState;
+use std::sync::{Arc, RwLock};
 
 pub trait AuditRepository: Send + Sync {
     fn list(&self, query: &QueryState) -> (Vec<AuditLog>, usize);
@@ -85,14 +85,22 @@ impl AuditRepository for InMemoryAuditRepository {
         if let Some(ref sort_col) = query.sort_by {
             list.sort_by(|a, b| {
                 let cmp = match sort_col.as_str() {
-                    "id" => a.id.parse::<usize>().unwrap_or(0).cmp(&b.id.parse::<usize>().unwrap_or(0)),
+                    "id" => {
+                        a.id.parse::<usize>()
+                            .unwrap_or(0)
+                            .cmp(&b.id.parse::<usize>().unwrap_or(0))
+                    }
                     "timestamp" => a.timestamp.cmp(&b.timestamp),
                     "user_name" => a.user_name.cmp(&b.user_name),
                     "action" => a.action.cmp(&b.action),
                     "resource" => a.resource.cmp(&b.resource),
                     _ => std::cmp::Ordering::Equal,
                 };
-                if query.sort_desc { cmp.reverse() } else { cmp }
+                if query.sort_desc {
+                    cmp.reverse()
+                } else {
+                    cmp
+                }
             });
         } else {
             // Default: newest logs first
@@ -101,7 +109,11 @@ impl AuditRepository for InMemoryAuditRepository {
 
         let total = list.len();
         let page = if query.page == 0 { 1 } else { query.page };
-        let per_page = if query.per_page == 0 { 8 } else { query.per_page };
+        let per_page = if query.per_page == 0 {
+            8
+        } else {
+            query.per_page
+        };
         let skip = (page - 1) * per_page;
 
         let paginated = list.into_iter().skip(skip).take(per_page).collect();

@@ -1,33 +1,59 @@
-use terminus::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use terminus::prelude::*;
 
 struct TestModalResource;
 impl Resource for TestModalResource {
-    fn name(&self) -> &str { "Item" }
-    fn plural_name(&self) -> &str { "Items" }
-    fn slug(&self) -> &str { "items" }
-    fn table(&self) -> Table { Table::new() }
-    fn form(&self) -> Form { Form::new() }
-    fn fetch_rows(&self, _query: &QueryState) -> (Vec<RowData>, usize) { (vec![], 0) }
+    fn name(&self) -> &str {
+        "Item"
+    }
+    fn plural_name(&self) -> &str {
+        "Items"
+    }
+    fn slug(&self) -> &str {
+        "items"
+    }
+    fn table(&self) -> Table {
+        Table::new()
+    }
+    fn form(&self) -> Form {
+        Form::new()
+    }
+    fn fetch_rows(&self, _query: &QueryState) -> (Vec<RowData>, usize) {
+        (vec![], 0)
+    }
 }
 
 struct TestPageResource;
 impl Resource for TestPageResource {
-    fn name(&self) -> &str { "Article" }
-    fn plural_name(&self) -> &str { "Articles" }
-    fn slug(&self) -> &str { "articles" }
-    fn form_mode(&self) -> FormMode { FormMode::Page }
+    fn name(&self) -> &str {
+        "Article"
+    }
+    fn plural_name(&self) -> &str {
+        "Articles"
+    }
+    fn slug(&self) -> &str {
+        "articles"
+    }
+    fn form_mode(&self) -> FormMode {
+        FormMode::Page
+    }
     fn table(&self) -> Table {
-        Table::new()
-            .striped()
-            .filter(TableFilter::select("status", "Status", vec![("draft", "Draft"), ("published", "Published")]))
+        Table::new().striped().filter(TableFilter::select(
+            "status",
+            "Status",
+            vec![("draft", "Draft"), ("published", "Published")],
+        ))
     }
     fn form(&self) -> Form {
-        Form::new()
-            .field(FormField::searchable_select("category", vec![("tech", "Technology"), ("life", "Lifestyle")]))
+        Form::new().field(FormField::searchable_select(
+            "category",
+            vec![("tech", "Technology"), ("life", "Lifestyle")],
+        ))
     }
-    fn fetch_rows(&self, _query: &QueryState) -> (Vec<RowData>, usize) { (vec![], 0) }
+    fn fetch_rows(&self, _query: &QueryState) -> (Vec<RowData>, usize) {
+        (vec![], 0)
+    }
 }
 
 #[test]
@@ -41,10 +67,11 @@ fn test_form_mode_defaults_and_customization() {
 
 #[test]
 fn test_table_styles_and_filters() {
-    let table = Table::new()
-        .striped()
-        .compact()
-        .filter(TableFilter::select("role", "Role", vec![("admin", "Admin"), ("user", "User")]));
+    let table = Table::new().striped().compact().filter(TableFilter::select(
+        "role",
+        "Role",
+        vec![("admin", "Admin"), ("user", "User")],
+    ));
 
     assert_eq!(table.style, TableStyle::Compact);
     assert_eq!(table.filters.len(), 1);
@@ -162,13 +189,21 @@ fn test_domain_json_camel_case_serialization() {
 
 struct PolicyTestResource;
 impl Resource for PolicyTestResource {
-    fn name(&self) -> &str { "Invoice" }
-    fn plural_name(&self) -> &str { "Invoices" }
-    fn slug(&self) -> &str { "invoices" }
+    fn name(&self) -> &str {
+        "Invoice"
+    }
+    fn plural_name(&self) -> &str {
+        "Invoices"
+    }
+    fn slug(&self) -> &str {
+        "invoices"
+    }
     fn table(&self) -> Table {
         Table::new().column(Column::text("status"))
     }
-    fn form(&self) -> Form { Form::new() }
+    fn form(&self) -> Form {
+        Form::new()
+    }
     fn fetch_rows(&self, _query: &QueryState) -> (Vec<RowData>, usize) {
         let r1 = RowData::new("1").insert("status", "Draft");
         let r2 = RowData::new("2").insert("status", "Settled");
@@ -269,7 +304,10 @@ fn test_theme_and_brand_customization() {
     assert_eq!(theme.brand_name, "Acme Studio");
     assert_eq!(theme.primary_color.name(), "violet");
     assert_eq!(theme.primary_color.hex(), "#8b5cf6");
-    assert_eq!(theme.font_family.font_family_css(), "'Inter', system-ui, -apple-system, sans-serif");
+    assert_eq!(
+        theme.font_family.font_family_css(),
+        "'Inter', system-ui, -apple-system, sans-serif"
+    );
     assert!(theme.font_family.css_url().contains("family=Inter"));
 
     let user = User {
@@ -313,9 +351,7 @@ fn test_job_queue_and_background_worker() {
         Ok(())
     });
 
-    queue.dispatch_fn("generate_invoice_pdf", || {
-        Ok(())
-    });
+    queue.dispatch_fn("generate_invoice_pdf", || Ok(()));
 
     assert_eq!(queue.stats().pending, 2);
     assert_eq!(queue.stats().processed, 0);
@@ -384,15 +420,11 @@ fn test_cache_remember_and_ttl_expiration() {
     let cache = MemoryCache::new();
 
     // Cache miss followed by remember
-    let val1 = cache.remember("stats:daily_sales", 300, || {
-        "42000".to_string()
-    });
+    let val1 = cache.remember("stats:daily_sales", 300, || "42000".to_string());
     assert_eq!(val1, "42000");
 
     // Cache hit: callback not invoked
-    let val2 = cache.remember("stats:daily_sales", 300, || {
-        "99999".to_string()
-    });
+    let val2 = cache.remember("stats:daily_sales", 300, || "99999".to_string());
     assert_eq!(val2, "42000");
 
     // Direct get
@@ -426,10 +458,14 @@ fn test_fluent_expectations() {
         };
 
         // Chainable assertions
-        expect(&user.name).to_be("Engineer")
-            .and(&user.email).to_contain("@terminus.dev")
-            .and(&user.role).to_be(&Role::Superadmin)
-            .and(user.status.is_active()).to_be_true();
+        expect(&user.name)
+            .to_be("Engineer")
+            .and(&user.email)
+            .to_contain("@terminus.dev")
+            .and(&user.role)
+            .to_be(&Role::Superadmin)
+            .and(user.status.is_active())
+            .to_be_true();
 
         // Comparison and collections
         expect(100).to_be_greater_than(50);
@@ -514,9 +550,15 @@ impl ActionTestResource {
 }
 
 impl Resource for ActionTestResource {
-    fn name(&self) -> &str { "Product" }
-    fn plural_name(&self) -> &str { "Products" }
-    fn slug(&self) -> &str { "products" }
+    fn name(&self) -> &str {
+        "Product"
+    }
+    fn plural_name(&self) -> &str {
+        "Products"
+    }
+    fn slug(&self) -> &str {
+        "products"
+    }
 
     fn table(&self) -> Table {
         Table::new()
@@ -622,7 +664,9 @@ fn test_actions_and_replicate_row() {
     expect(cloned_record.get("price").unwrap()).to_be("1999");
 
     // Test row action dispatcher
-    let action_msg = res.handle_action("replicate", "2").expect("Dispatcher replicate should succeed");
+    let action_msg = res
+        .handle_action("replicate", "2")
+        .expect("Dispatcher replicate should succeed");
     assert!(action_msg.contains("replicated successfully"));
 
     let (_, total) = res.fetch_rows(&QueryState::default());
@@ -648,19 +692,25 @@ fn test_bulk_delete_and_streaming_export() {
     expect(bulk_act.modal_heading.as_deref().unwrap()).to_be("Confirm Archive");
 
     // High-performance streaming CSV export
-    let csv_output = res.bulk_export(&["1".to_string(), "2".to_string()], "csv").expect("CSV export should succeed");
+    let csv_output = res
+        .bulk_export(&["1".to_string(), "2".to_string()], "csv")
+        .expect("CSV export should succeed");
     assert!(csv_output.contains("name,price") || csv_output.contains("price,name"));
     assert!(csv_output.contains("MacBook Pro"));
     assert!(csv_output.contains("Studio Display"));
 
     // High-performance streaming JSON export
-    let json_output = res.bulk_export(&["1".to_string(), "2".to_string()], "json").expect("JSON export should succeed");
+    let json_output = res
+        .bulk_export(&["1".to_string(), "2".to_string()], "json")
+        .expect("JSON export should succeed");
     assert!(json_output.contains("MacBook Pro"));
     assert!(json_output.contains("Studio Display"));
     assert!(json_output.starts_with('[') && json_output.ends_with(']'));
 
     // High-concurrency in-process batch delete
-    let deleted_count = res.bulk_delete(&["1".to_string(), "2".to_string()]).expect("Bulk delete should succeed");
+    let deleted_count = res
+        .bulk_delete(&["1".to_string(), "2".to_string()])
+        .expect("Bulk delete should succeed");
     assert_eq!(deleted_count, 2);
 
     let (_, remaining) = res.fetch_rows(&QueryState::default());
@@ -691,10 +741,8 @@ fn test_form_section_and_field_builder() {
                 .rows(5)
                 .placeholder("Markdown supported")
                 .column_span(2),
-            FormField::toggle("is_published")
-                .helper_text("Toggle live visibility on storefront"),
-            FormField::datetime("scheduled_release")
-                .read_only(),
+            FormField::toggle("is_published").helper_text("Toggle live visibility on storefront"),
+            FormField::datetime("scheduled_release").read_only(),
         ]);
 
     expect(section.title()).to_be("General Information");
@@ -763,17 +811,26 @@ fn test_table_view_renders_bulk_actions_and_empty_state() {
     };
     struct EmptyResource;
     impl Resource for EmptyResource {
-        fn name(&self) -> &str { "Order" }
-        fn plural_name(&self) -> &str { "Orders" }
-        fn slug(&self) -> &str { "orders" }
+        fn name(&self) -> &str {
+            "Order"
+        }
+        fn plural_name(&self) -> &str {
+            "Orders"
+        }
+        fn slug(&self) -> &str {
+            "orders"
+        }
         fn table(&self) -> Table {
             Table::new()
                 .empty_state_heading("No orders found")
                 .empty_state_description("No customer orders recorded yet.")
         }
-        fn fetch_rows(&self, _query: &QueryState) -> (Vec<RowData>, usize) { (vec![], 0) }
+        fn fetch_rows(&self, _query: &QueryState) -> (Vec<RowData>, usize) {
+            (vec![], 0)
+        }
     }
-    let empty_html = terminus::view::table_view::render_table_partial(&EmptyResource, &empty_query, &admin_user);
+    let empty_html =
+        terminus::view::table_view::render_table_partial(&EmptyResource, &empty_query, &admin_user);
     assert!(empty_html.contains("No orders found"));
     assert!(empty_html.contains("No customer orders recorded yet."));
 }
@@ -880,7 +937,9 @@ fn test_token_issuance_and_abilities() {
     };
 
     // Issue token with specific abilities
-    let new_token = user.create_token(&store, "cli-app", vec!["orders:read", "orders:create"]).unwrap();
+    let new_token = user
+        .create_token(&store, "cli-app", vec!["orders:read", "orders:create"])
+        .unwrap();
     assert!(new_token.plain_text_token.contains('|'));
 
     // Verify abilities
@@ -902,25 +961,35 @@ fn test_token_issuance_and_abilities() {
     assert!(full_access.access_token.can("database:destroy"));
 
     // Expiration test
-    let expired_token = user.create_token_with_expiry(
-        &store,
-        "temporary",
-        vec!["*"],
-        Some("2020-01-01T00:00:00Z".to_string()),
-    ).unwrap();
+    let expired_token = user
+        .create_token_with_expiry(
+            &store,
+            "temporary",
+            vec!["*"],
+            Some("2020-01-01T00:00:00Z".to_string()),
+        )
+        .unwrap();
     assert!(expired_token.access_token.is_expired());
     assert!(store.find_token(&expired_token.plain_text_token).is_none());
 }
 
 #[test]
 fn test_sqlite_token_store() {
-    use terminus::prelude::*;
     use std::sync::{Arc, Mutex};
+    use terminus::prelude::*;
 
     let conn = Arc::new(Mutex::new(rusqlite::Connection::open_in_memory().unwrap()));
     let store = SqliteTokenStore::new(conn).unwrap();
 
-    let new_token = store.create_token("User", "u_42", "mobile-app", vec!["read".into(), "write".into()], None).unwrap();
+    let new_token = store
+        .create_token(
+            "User",
+            "u_42",
+            "mobile-app",
+            vec!["read".into(), "write".into()],
+            None,
+        )
+        .unwrap();
     let plain_secret = &new_token.plain_text_token;
 
     let found = store.find_token(plain_secret);
@@ -954,7 +1023,8 @@ fn test_orm_active_record_and_query_builder() {
         table.id();
         table.string("name");
         table.timestamps();
-    }).unwrap();
+    })
+    .unwrap();
 
     Schema::create(&conn, "test_products", |table| {
         table.id();
@@ -962,7 +1032,8 @@ fn test_orm_active_record_and_query_builder() {
         table.string("price");
         table.string("category_id");
         table.timestamps();
-    }).unwrap();
+    })
+    .unwrap();
 
     // 2. Dynamic Model Active Record dirty tracking
     let mut dyn_model = DynamicModel::new("test_products");
@@ -971,7 +1042,10 @@ fn test_orm_active_record_and_query_builder() {
     dyn_model.set("category_id", "cat_1");
 
     assert!(dyn_model.is_dirty());
-    assert_eq!(dyn_model.get_dirty().get("title").map(|s| s.as_str()), Some("Mechanical Keyboard"));
+    assert_eq!(
+        dyn_model.get_dirty().get("title").map(|s| s.as_str()),
+        Some("Mechanical Keyboard")
+    );
 
     dyn_model.save(&conn).unwrap();
     assert!(!dyn_model.is_dirty());
@@ -1015,10 +1089,16 @@ fn test_orm_active_record_and_query_builder() {
         .unwrap();
     assert!(expensive.len() >= 2);
 
-    let count = TestProduct::query().where_eq("category_id", "cat_1").count(&conn).unwrap();
+    let count = TestProduct::query()
+        .where_eq("category_id", "cat_1")
+        .count(&conn)
+        .unwrap();
     assert_eq!(count, 3);
 
-    let first = TestProduct::query().where_eq("id", "prod_2").first(&conn).unwrap();
+    let first = TestProduct::query()
+        .where_eq("id", "prod_2")
+        .first(&conn)
+        .unwrap();
     assert!(first.is_some());
     assert_eq!(first.unwrap().title, "Axum Deep Dive");
 
@@ -1173,10 +1253,9 @@ async fn test_enterprise_app_module_and_api_responses() {
     // 4. DynamicModule programmatic builder
     let dyn_mod = DynamicModule::new("Shipping", "shipping")
         .with_description("Logistics tracking module")
-        .with_routes(axum::Router::new().route(
-            "/tracking",
-            get(|| async { ApiResponse::ok("in_transit") }),
-        ));
+        .with_routes(
+            axum::Router::new().route("/tracking", get(|| async { ApiResponse::ok("in_transit") })),
+        );
 
     assert_eq!(dyn_mod.name(), "Shipping");
     assert_eq!(dyn_mod.slug(), "shipping");
@@ -1191,7 +1270,10 @@ fn test_sqlite_cache_persistence_and_ttl() {
 
     // Store value with 3600s TTL
     cache.put("user:session:1", "session_payload_data", Some(3600));
-    assert_eq!(cache.get("user:session:1"), Some("session_payload_data".to_string()));
+    assert_eq!(
+        cache.get("user:session:1"),
+        Some("session_payload_data".to_string())
+    );
 
     // Store value with None (infinite) TTL
     cache.put("app:config:name", "Terminus", None);
@@ -1219,18 +1301,24 @@ fn test_sqlite_job_queue_persistence_and_retries() {
     assert_eq!(queue.stats().pending, 1);
 
     // Process job successfully
-    let worked = queue.work_one(|name, payload| {
-        assert_eq!(name, "send_invoice");
-        assert!(payload.contains("9021"));
-        Ok(())
-    }).unwrap();
+    let worked = queue
+        .work_one(|name, payload| {
+            assert_eq!(name, "send_invoice");
+            assert!(payload.contains("9021"));
+            Ok(())
+        })
+        .unwrap();
     assert_eq!(worked, Some(true));
     assert_eq!(queue.stats().pending, 0);
     assert_eq!(queue.stats().processed, 1);
 
     // Push failing job with max_attempts = 1
-    queue.push_with_max_attempts("flaky_service", "{}", 1).unwrap();
-    let failed = queue.work_one(|_, _| Err("Service unavailable".to_string())).unwrap();
+    queue
+        .push_with_max_attempts("flaky_service", "{}", 1)
+        .unwrap();
+    let failed = queue
+        .work_one(|_, _| Err("Service unavailable".to_string()))
+        .unwrap();
     assert_eq!(failed, Some(false));
     assert_eq!(queue.stats().failed, 1);
 }
@@ -1276,9 +1364,15 @@ fn test_rich_fields_and_image_columns_rendering() {
 
     struct ProductResource;
     impl terminus::resource::Resource for ProductResource {
-        fn name(&self) -> &'static str { "Product" }
-        fn plural_name(&self) -> &'static str { "Products" }
-        fn slug(&self) -> &'static str { "products" }
+        fn name(&self) -> &'static str {
+            "Product"
+        }
+        fn plural_name(&self) -> &'static str {
+            "Products"
+        }
+        fn slug(&self) -> &'static str {
+            "products"
+        }
         fn table(&self) -> terminus::table::Table {
             terminus::table::Table::new()
                 .column(Column::text("title"))
@@ -1292,15 +1386,19 @@ fn test_rich_fields_and_image_columns_rendering() {
                 .field(FormField::barcode("sku"))
                 .field(FormField::color("theme_color"))
         }
-        fn fetch_rows(&self, _: &terminus::resource::QueryState) -> (Vec<terminus::resource::RowData>, usize) {
+        fn fetch_rows(
+            &self,
+            _: &terminus::resource::QueryState,
+        ) -> (Vec<terminus::resource::RowData>, usize) {
             (
-                vec![
-                    terminus::resource::RowData::new("1")
-                        .insert("title", "Ergonomic Mechanical Keyboard")
-                        .insert("thumbnail", "https://images.unsplash.com/photo-1587829741301-dc798b83add3")
-                        .insert("sku", "KB-9002-RGB")
-                        .insert("theme_color", "#3b82f6"),
-                ],
+                vec![terminus::resource::RowData::new("1")
+                    .insert("title", "Ergonomic Mechanical Keyboard")
+                    .insert(
+                        "thumbnail",
+                        "https://images.unsplash.com/photo-1587829741301-dc798b83add3",
+                    )
+                    .insert("sku", "KB-9002-RGB")
+                    .insert("theme_color", "#3b82f6")],
                 1,
             )
         }
@@ -1312,7 +1410,8 @@ fn test_rich_fields_and_image_columns_rendering() {
     // 1. Test table view rendering for ColumnType::Image
     let query = terminus::resource::QueryState::default();
     let table_html = terminus::view::table_view::render_table_partial(&resource, &query, &user);
-    assert!(table_html.contains("img src=\"https://images.unsplash.com/photo-1587829741301-dc798b83add3\""));
+    assert!(table_html
+        .contains("img src=\"https://images.unsplash.com/photo-1587829741301-dc798b83add3\""));
     assert!(table_html.contains("alt=\"Thumbnail\""));
 
     // 2. Test dialog form rendering for rich fields
@@ -1326,16 +1425,27 @@ fn test_rich_fields_and_image_columns_rendering() {
 
     // 3. Test full-page form rendering for rich fields with populated values
     let mut values = std::collections::HashMap::new();
-    values.insert("title".to_string(), "Ergonomic Mechanical Keyboard".to_string());
-    values.insert("description".to_string(), "## Specs\n- Hot-swappable switches".to_string());
-    values.insert("thumbnail".to_string(), "https://images.unsplash.com/photo-1587829741301-dc798b83add3".to_string());
+    values.insert(
+        "title".to_string(),
+        "Ergonomic Mechanical Keyboard".to_string(),
+    );
+    values.insert(
+        "description".to_string(),
+        "## Specs\n- Hot-swappable switches".to_string(),
+    );
+    values.insert(
+        "thumbnail".to_string(),
+        "https://images.unsplash.com/photo-1587829741301-dc798b83add3".to_string(),
+    );
     values.insert("sku".to_string(), "KB-9002-RGB".to_string());
     values.insert("theme_color".to_string(), "#3b82f6".to_string());
 
-    let page_html = terminus::view::form_page::render_form_page(&resource, Some("1"), Some(&values));
+    let page_html =
+        terminus::view::form_page::render_form_page(&resource, Some("1"), Some(&values));
     assert!(page_html.contains("## Specs\n- Hot-swappable switches"));
     assert!(page_html.contains("formatRichText('page-field-description'"));
-    assert!(page_html.contains("value=\"https://images.unsplash.com/photo-1587829741301-dc798b83add3\""));
+    assert!(page_html
+        .contains("value=\"https://images.unsplash.com/photo-1587829741301-dc798b83add3\""));
     assert!(page_html.contains("value=\"KB-9002-RGB\""));
     assert!(page_html.contains("value=\"#3b82f6\""));
 }
@@ -1392,7 +1502,10 @@ fn test_global_helpers_and_ergonomics() {
     // 5. Abort flow control helpers
     assert!(abort_if(false, 403, "Forbidden").is_ok());
     assert!(abort_if(true, 403, "Forbidden").is_err());
-    assert_eq!(abort_if(true, 403, "Access Denied").unwrap_err().status, 403);
+    assert_eq!(
+        abort_if(true, 403, "Access Denied").unwrap_err().status,
+        403
+    );
     assert!(abort_unless(true, 404, "Not Found").is_ok());
     assert!(abort_unless(false, 404, "Not Found").is_err());
     assert_eq!(abort_404("Missing Record").unwrap_err().status, 404);
@@ -1440,8 +1553,8 @@ fn test_app_bootstrap_and_routing() {
 
 #[test]
 fn test_advanced_filters_and_presets() {
-    use terminus::prelude::*;
     use std::collections::HashMap;
+    use terminus::prelude::*;
 
     let filter_date = Filter::date_range("created_at").label("Creation Date");
     assert_eq!(filter_date.key, "created_at");
@@ -1450,7 +1563,8 @@ fn test_advanced_filters_and_presets() {
     let filter_slider = Filter::range_slider("price", 0.0, 500.0, 10.0);
     assert_eq!(filter_slider.key, "price");
 
-    let filter_multi = Filter::multi_select("status", vec![("paid", "Paid"), ("pending", "Pending")]);
+    let filter_multi =
+        Filter::multi_select("status", vec![("paid", "Paid"), ("pending", "Pending")]);
     assert_eq!(filter_multi.key, "status");
 
     let preset = FilterPreset::make("vip_orders", "VIP High Spend Orders")
@@ -1527,25 +1641,53 @@ fn test_strict_webhook_hmac_sha256_verification() {
     let computed_sig = WebhookVerifier::compute_signature(raw_payload, secret);
 
     // Direct hex signature matches
-    assert!(WebhookVerifier::verify_signature(raw_payload, &computed_sig, secret));
+    assert!(WebhookVerifier::verify_signature(
+        raw_payload,
+        &computed_sig,
+        secret
+    ));
 
     // sha256= prefix matches
     let sha256_sig = format!("sha256={}", computed_sig);
-    assert!(WebhookVerifier::verify_signature(raw_payload, &sha256_sig, secret));
+    assert!(WebhookVerifier::verify_signature(
+        raw_payload,
+        &sha256_sig,
+        secret
+    ));
 
     // Timestamped Stripe/GitHub format: t=timestamp,v1=sig
     let timestamp = "1729000000";
     let signed_payload = format!("{}.{}", timestamp, raw_payload);
     let v1_sig = WebhookVerifier::compute_signature(&signed_payload, secret);
     let header = format!("t={},v1={}", timestamp, v1_sig);
-    assert!(WebhookVerifier::verify_signature(raw_payload, &header, secret));
+    assert!(WebhookVerifier::verify_signature(
+        raw_payload,
+        &header,
+        secret
+    ));
 
     // Rejection on invalid signature, secret, or tampering
-    assert!(!WebhookVerifier::verify_signature(raw_payload, "invalid_sig", secret));
-    assert!(!WebhookVerifier::verify_signature(raw_payload, &computed_sig, "wrong_secret"));
-    assert!(!WebhookVerifier::verify_signature(r#"{"event":"tampered"}"#, &computed_sig, secret));
+    assert!(!WebhookVerifier::verify_signature(
+        raw_payload,
+        "invalid_sig",
+        secret
+    ));
+    assert!(!WebhookVerifier::verify_signature(
+        raw_payload,
+        &computed_sig,
+        "wrong_secret"
+    ));
+    assert!(!WebhookVerifier::verify_signature(
+        r#"{"event":"tampered"}"#,
+        &computed_sig,
+        secret
+    ));
     assert!(!WebhookVerifier::verify_signature(raw_payload, "", secret));
-    assert!(!WebhookVerifier::verify_signature(raw_payload, &computed_sig, ""));
+    assert!(!WebhookVerifier::verify_signature(
+        raw_payload,
+        &computed_sig,
+        ""
+    ));
 }
 
 #[test]
@@ -1563,11 +1705,16 @@ fn test_sortable_tables_and_draggable_blocks() {
     assert!(table.columns[1].editable);
     assert_eq!(
         table.columns[1].editable_options,
-        Some(vec!["draft".to_string(), "published".to_string(), "archived".to_string()])
+        Some(vec![
+            "draft".to_string(),
+            "published".to_string(),
+            "archived".to_string()
+        ])
     );
 
     // 2. Draggable UI blocks in Form
-    let field = FormField::draggable_blocks("page_content", vec!["hero", "features", "pricing", "cta"]);
+    let field =
+        FormField::draggable_blocks("page_content", vec!["hero", "features", "pricing", "cta"]);
     match field.field_type {
         FieldType::DraggableBlocks { block_types } => {
             assert_eq!(block_types.len(), 4);
@@ -1583,11 +1730,26 @@ fn test_platform_adapters_and_sdk_generator() {
     use terminus::prelude::*;
 
     // 1. Platform detection from user-agent
-    assert_eq!(Platform::from_user_agent("Mozilla/5.0 (Linux; Android 14)"), Platform::Mobile);
-    assert_eq!(Platform::from_user_agent("Mozilla/5.0 (iPhone; CPU iPhone OS 17)"), Platform::Mobile);
-    assert_eq!(Platform::from_user_agent("Tauri/2.0 Desktop"), Platform::Desktop);
-    assert_eq!(Platform::from_user_agent("Electron/28.0 Desktop"), Platform::Desktop);
-    assert_eq!(Platform::from_user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X)"), Platform::Web);
+    assert_eq!(
+        Platform::from_user_agent("Mozilla/5.0 (Linux; Android 14)"),
+        Platform::Mobile
+    );
+    assert_eq!(
+        Platform::from_user_agent("Mozilla/5.0 (iPhone; CPU iPhone OS 17)"),
+        Platform::Mobile
+    );
+    assert_eq!(
+        Platform::from_user_agent("Tauri/2.0 Desktop"),
+        Platform::Desktop
+    );
+    assert_eq!(
+        Platform::from_user_agent("Electron/28.0 Desktop"),
+        Platform::Desktop
+    );
+    assert_eq!(
+        Platform::from_user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X)"),
+        Platform::Web
+    );
 
     // 2. Typed SDK Generator (TypeScript & OpenAPI 3.0)
     let gen = SdkGenerator::new("Acme Logistics", "1.0")
@@ -1607,8 +1769,8 @@ fn test_platform_adapters_and_sdk_generator() {
 
 #[tokio::test]
 async fn test_abort_error_into_response_and_constructors() {
-    use terminus::prelude::*;
     use axum::response::IntoResponse;
+    use terminus::prelude::*;
 
     // 1. Test convenience constructors
     let err_forbidden = AbortError::forbidden("Access Denied");
@@ -1622,19 +1784,13 @@ async fn test_abort_error_into_response_and_constructors() {
     assert_eq!(err_bad.status, 400);
 
     // 2. Test IntoResponse with JSON client
-    let req_json = RequestInfo::new("GET", "/api/secure")
-        .with_header("Accept", "application/json");
-    let resp_json = with_request(req_json, || {
-        err_forbidden.clone().into_response()
-    });
+    let req_json = RequestInfo::new("GET", "/api/secure").with_header("Accept", "application/json");
+    let resp_json = with_request(req_json, || err_forbidden.clone().into_response());
     assert_eq!(resp_json.status(), axum::http::StatusCode::FORBIDDEN);
 
     // 3. Test IntoResponse with HTML browser client
-    let req_html = RequestInfo::new("GET", "/admin/secure")
-        .with_header("Accept", "text/html");
-    let resp_html = with_request(req_html, || {
-        err_forbidden.into_response()
-    });
+    let req_html = RequestInfo::new("GET", "/admin/secure").with_header("Accept", "text/html");
+    let resp_html = with_request(req_html, || err_forbidden.into_response());
     assert_eq!(resp_html.status(), axum::http::StatusCode::FORBIDDEN);
 }
 
@@ -1642,8 +1798,13 @@ async fn test_abort_error_into_response_and_constructors() {
 async fn test_app_fluent_group_static_and_openapi() {
     use terminus::prelude::*;
 
-    let sdk_gen = SdkGenerator::new("Acme API", "1.0.0")
-        .endpoint("GET", "/api/v1/ping", None, "string", "Ping service");
+    let sdk_gen = SdkGenerator::new("Acme API", "1.0.0").endpoint(
+        "GET",
+        "/api/v1/ping",
+        None,
+        "string",
+        "Ping service",
+    );
 
     let app = App::new()
         .port(4000)
@@ -1664,14 +1825,29 @@ fn test_typescript_sdk_and_openapi_generation() {
     use terminus::prelude::*;
 
     let gen = SdkGenerator::new("Terminus Store", "2.0.0")
-        .type_schema("Product", vec![
-            ("id", "string"),
-            ("title", "string"),
-            ("price", "number"),
-            ("inStock", "boolean"),
-        ])
-        .endpoint("GET", "/api/products", None, "Product[]", "Fetch product catalog")
-        .endpoint("POST", "/api/checkout", Some("Product"), "Product", "Place order");
+        .type_schema(
+            "Product",
+            vec![
+                ("id", "string"),
+                ("title", "string"),
+                ("price", "number"),
+                ("inStock", "boolean"),
+            ],
+        )
+        .endpoint(
+            "GET",
+            "/api/products",
+            None,
+            "Product[]",
+            "Fetch product catalog",
+        )
+        .endpoint(
+            "POST",
+            "/api/checkout",
+            Some("Product"),
+            "Product",
+            "Place order",
+        );
 
     // 1. TypeScript SDK Verification
     let ts = gen.to_typescript();
@@ -1710,14 +1886,20 @@ fn test_blueprint_types_and_database_manager() {
             table.datetime("published_at");
             table.json("metadata");
             table.timestamps();
-        }).unwrap();
+        })
+        .unwrap();
     });
 
     // 2. Insert and query using Database helper
     db.execute("INSERT INTO test_records (id, title, body, views, published, rating, price, published_at, metadata, created_at, updated_at) VALUES ('1', 'Intro', 'Content', 10, 1, 4.8, 19.99, '2026-10-12', '{}', '2026-10-12', '2026-10-12')").unwrap();
 
     let count = db.with_conn(|conn| {
-        conn.query_row("SELECT COUNT(1) FROM test_records WHERE title = ?1", rusqlite::params!["Intro"], |r| r.get::<_, usize>(0)).unwrap()
+        conn.query_row(
+            "SELECT COUNT(1) FROM test_records WHERE title = ?1",
+            rusqlite::params!["Intro"],
+            |r| r.get::<_, usize>(0),
+        )
+        .unwrap()
     });
     assert_eq!(count, 1);
 }
@@ -1738,7 +1920,8 @@ fn test_enhanced_testing_assertions() {
 fn test_project_scaffolding_presets() {
     use terminus::prelude::*;
 
-    let temp_base = std::env::temp_dir().join(format!("terminus_scaffold_test_{}", std::process::id()));
+    let temp_base =
+        std::env::temp_dir().join(format!("terminus_scaffold_test_{}", std::process::id()));
 
     // 1. Fullstack preset
     let app1_dir = temp_base.join("app1_fullstack");
@@ -1752,7 +1935,9 @@ fn test_project_scaffolding_presets() {
     assert!(files1.iter().any(|f| f.ends_with("src/main.rs")));
     assert!(files1.iter().any(|f| f.ends_with(".env.example")));
     assert!(files1.iter().any(|f| f.ends_with("README.md")));
-    assert!(files1.iter().any(|f| f.ends_with("migrations/001_create_users_table.sql")));
+    assert!(files1
+        .iter()
+        .any(|f| f.ends_with("migrations/001_create_users_table.sql")));
     assert!(files1.iter().any(|f| f.ends_with("public/index.html")));
 
     let cargo1 = std::fs::read_to_string(app1_dir.join("Cargo.toml")).unwrap();
@@ -1766,7 +1951,8 @@ fn test_project_scaffolding_presets() {
     let env1 = std::fs::read_to_string(app1_dir.join(".env.example")).unwrap();
     assert!(env1.contains("DATABASE_URL=sqlite://terminus.db"));
 
-    let mig1 = std::fs::read_to_string(app1_dir.join("migrations/001_create_users_table.sql")).unwrap();
+    let mig1 =
+        std::fs::read_to_string(app1_dir.join("migrations/001_create_users_table.sql")).unwrap();
     assert!(mig1.contains("CREATE TABLE IF NOT EXISTS users"));
 
     // 2. Headless Backend API preset
@@ -1780,7 +1966,9 @@ fn test_project_scaffolding_presets() {
     assert!(files2.iter().any(|f| f.ends_with("Cargo.toml")));
     assert!(files2.iter().any(|f| f.ends_with("src/main.rs")));
     assert!(files2.iter().any(|f| f.ends_with(".env.example")));
-    assert!(files2.iter().any(|f| f.ends_with("migrations/001_create_users_table.sql")));
+    assert!(files2
+        .iter()
+        .any(|f| f.ends_with("migrations/001_create_users_table.sql")));
 
     let main2 = std::fs::read_to_string(app2_dir.join("src/main.rs")).unwrap();
     assert!(main2.contains("Terminus Headless API"));
@@ -1790,8 +1978,14 @@ fn test_project_scaffolding_presets() {
     // 3. Targets and Presets
     assert_eq!(parse_targets("web"), vec![TargetPlatform::Web]);
     assert_eq!(parse_targets("any"), vec![TargetPlatform::Web]);
-    assert_eq!(ProjectPreset::from_str_loose("fullstack"), Some(ProjectPreset::Fullstack));
-    assert_eq!(ProjectPreset::from_str_loose("backend"), Some(ProjectPreset::Backend));
+    assert_eq!(
+        ProjectPreset::from_str_loose("fullstack"),
+        Some(ProjectPreset::Fullstack)
+    );
+    assert_eq!(
+        ProjectPreset::from_str_loose("backend"),
+        Some(ProjectPreset::Backend)
+    );
 
     // Clean up temporary directory
     let _ = std::fs::remove_dir_all(&temp_base);
@@ -1818,10 +2012,27 @@ fn test_type_safe_validator_and_validation_errors() {
     };
 
     let result = Validator::new(&valid_req)
-        .rule("customer_email", |r| !r.customer_email.is_empty(), "Email is required")
-        .rule("customer_email", |r| r.customer_email.contains('@'), "Valid email required")
-        .rule("amount", |r| r.amount > 0.0, "Amount must be greater than zero")
-        .rule_when(|r| r.is_rush, "amount", |r| r.amount >= 50.0, "Rush orders require min $50")
+        .rule(
+            "customer_email",
+            |r| !r.customer_email.is_empty(),
+            "Email is required",
+        )
+        .rule(
+            "customer_email",
+            |r| r.customer_email.contains('@'),
+            "Valid email required",
+        )
+        .rule(
+            "amount",
+            |r| r.amount > 0.0,
+            "Amount must be greater than zero",
+        )
+        .rule_when(
+            |r| r.is_rush,
+            "amount",
+            |r| r.amount >= 50.0,
+            "Rush orders require min $50",
+        )
         .validate();
 
     assert!(result.is_ok());
@@ -1835,10 +2046,27 @@ fn test_type_safe_validator_and_validation_errors() {
     };
 
     let err_result = Validator::new(&invalid_req)
-        .rule("customer_email", |r| !r.customer_email.is_empty(), "Email is required")
-        .rule("customer_email", |r| r.customer_email.contains('@'), "Valid email required")
-        .rule("amount", |r| r.amount > 0.0, "Amount must be greater than zero")
-        .rule_when(|r| r.is_rush, "amount", |r| r.amount >= 50.0, "Rush orders require min $50")
+        .rule(
+            "customer_email",
+            |r| !r.customer_email.is_empty(),
+            "Email is required",
+        )
+        .rule(
+            "customer_email",
+            |r| r.customer_email.contains('@'),
+            "Valid email required",
+        )
+        .rule(
+            "amount",
+            |r| r.amount > 0.0,
+            "Amount must be greater than zero",
+        )
+        .rule_when(
+            |r| r.is_rush,
+            "amount",
+            |r| r.amount >= 50.0,
+            "Rush orders require min $50",
+        )
         .validate();
 
     assert!(err_result.is_err());
@@ -1889,7 +2117,11 @@ fn test_agent_schema_introspection_and_app_spec() {
 
     // 1. Direct AppSpec construction
     let mut spec = AppSpec::new("Warehouse Master");
-    spec.set_targets(vec!["web".to_string(), "desktop".to_string(), "iot".to_string()]);
+    spec.set_targets(vec![
+        "web".to_string(),
+        "desktop".to_string(),
+        "iot".to_string(),
+    ]);
 
     spec.add_route(RouteSpec::new("GET", "/api/items", "list_items").with_auth(true));
     spec.add_route(RouteSpec::new("POST", "/api/items", "create_item"));
@@ -1937,8 +2169,16 @@ fn test_agent_schema_introspection_and_app_spec() {
 
     assert_eq!(app.spec().app_name, "Logistics API");
     assert_eq!(app.spec().port, 4000);
-    assert!(app.spec().routes.iter().any(|r| r.path == "/api/v1/health" && r.method == "GET"));
-    assert!(app.spec().routes.iter().any(|r| r.path == "/api/v1/shipments" && r.method == "POST"));
+    assert!(app
+        .spec()
+        .routes
+        .iter()
+        .any(|r| r.path == "/api/v1/health" && r.method == "GET"));
+    assert!(app
+        .spec()
+        .routes
+        .iter()
+        .any(|r| r.path == "/api/v1/shipments" && r.method == "POST"));
     assert_eq!(app.spec().models.len(), 1);
 }
 
@@ -1949,28 +2189,30 @@ async fn test_headless_test_client_and_http_assertions() {
         .get("/api/health", || async {
             json_response(serde_json::json!({ "status": "healthy", "service": "commerce" }))
         })
-        .post("/api/items", |axum::Json(payload): axum::Json<serde_json::Value>| async move {
-            let mut jv = JsonValidator::new(&payload);
-            jv.require_str("name");
-            jv.require_number("price");
-            match jv.validate() {
-                Ok(_) => (
-                    axum::http::StatusCode::CREATED,
-                    [("Content-Type", "application/json")],
-                    serde_json::json!({ "id": "item_123", "status": "created" }).to_string(),
-                )
-                    .into_response(),
-                Err(errors) => errors.into_response(),
-            }
-        })
+        .post(
+            "/api/items",
+            |axum::Json(payload): axum::Json<serde_json::Value>| async move {
+                let mut jv = JsonValidator::new(&payload);
+                jv.require_str("name");
+                jv.require_number("price");
+                match jv.validate() {
+                    Ok(_) => (
+                        axum::http::StatusCode::CREATED,
+                        [("Content-Type", "application/json")],
+                        serde_json::json!({ "id": "item_123", "status": "created" }).to_string(),
+                    )
+                        .into_response(),
+                    Err(errors) => errors.into_response(),
+                }
+            },
+        )
         .spec_endpoint("/api/_spec");
 
     let client = TestClient::new(app);
 
     // 1. GET /api/health
     let res = client.get("/api/health").await;
-    res.assert_ok()
-        .assert_contains("healthy");
+    res.assert_ok().assert_contains("healthy");
     assert_eq!(res.json()["status"], "healthy");
     assert_eq!(res.json()["service"], "commerce");
 
@@ -2016,7 +2258,10 @@ fn test_argon2_hash_and_legacy_pbkdf2_verification() {
 
     // Test with specific salt and iterations
     let custom_hash = Hash::make_with_salt("admin123", "fixed_salt_123", 5_000);
-    assert_eq!(custom_hash, Hash::make_with_salt("admin123", "fixed_salt_123", 5_000));
+    assert_eq!(
+        custom_hash,
+        Hash::make_with_salt("admin123", "fixed_salt_123", 5_000)
+    );
     assert!(Hash::check("admin123", &custom_hash));
     assert!(!Hash::check("admin124", &custom_hash));
 
@@ -2033,7 +2278,9 @@ fn test_cryptographic_webhook_hmac_sha256_verification() {
 
     // 1. Raw HMAC-SHA256 hex
     let signature = WebhookVerifier::compute_signature(payload, secret);
-    assert!(WebhookVerifier::verify_signature(payload, &signature, secret));
+    assert!(WebhookVerifier::verify_signature(
+        payload, &signature, secret
+    ));
 
     // 2. GitHub-style prefix `sha256=<hex>`
     let gh_sig = format!("sha256={}", signature);
@@ -2044,12 +2291,28 @@ fn test_cryptographic_webhook_hmac_sha256_verification() {
     let signed_payload = format!("{}.{}", ts, payload);
     let v1_sig = WebhookVerifier::compute_signature(&signed_payload, secret);
     let stripe_sig = format!("t={},v1={}", ts, v1_sig);
-    assert!(WebhookVerifier::verify_signature(payload, &stripe_sig, secret));
+    assert!(WebhookVerifier::verify_signature(
+        payload,
+        &stripe_sig,
+        secret
+    ));
 
     // 4. Tampered payload or wrong secret must fail
-    assert!(!WebhookVerifier::verify_signature(r#"{"tampered":true}"#, &signature, secret));
-    assert!(!WebhookVerifier::verify_signature(payload, &signature, "wrong_secret"));
-    assert!(!WebhookVerifier::verify_signature(payload, "invalid_sig", secret));
+    assert!(!WebhookVerifier::verify_signature(
+        r#"{"tampered":true}"#,
+        &signature,
+        secret
+    ));
+    assert!(!WebhookVerifier::verify_signature(
+        payload,
+        &signature,
+        "wrong_secret"
+    ));
+    assert!(!WebhookVerifier::verify_signature(
+        payload,
+        "invalid_sig",
+        secret
+    ));
     assert!(!WebhookVerifier::verify_signature("", &signature, secret));
 }
 
@@ -2109,9 +2372,12 @@ async fn test_valid_extractor_and_redirect_controller() {
 
     // 2. Define controller handler function with fluent validation ergonomics
     async fn subscribe_handler(Valid(subscriber): Valid<NewsletterSubscriber>) -> Result<Redirect> {
-        db::query!("INSERT INTO subscribers (email) VALUES (?)", subscriber.email)
-            .insert()
-            .await?;
+        db::query!(
+            "INSERT INTO subscribers (email) VALUES (?)",
+            subscriber.email
+        )
+        .insert()
+        .await?;
 
         // Idiomatic controller response returning Result<Redirect>
         Ok(redirect("/subscribe/thank-you"))
@@ -2125,35 +2391,44 @@ async fn test_valid_extractor_and_redirect_controller() {
 
     // 3. Test valid subscriber submission -> HTTP 303 See Other Redirect to /subscribe/thank-you
     let res = client
-        .post("/subscribe", serde_json::json!({
-            "email": "subscriber@example.com",
-            "channel": "rust-preview"
-        }))
+        .post(
+            "/subscribe",
+            serde_json::json!({
+                "email": "subscriber@example.com",
+                "channel": "rust-preview"
+            }),
+        )
         .await;
 
     assert_eq!(res.status(), axum::http::StatusCode::SEE_OTHER);
-    assert_eq!(
-        res.header("location"),
-        Some("/subscribe/thank-you")
-    );
+    assert_eq!(res.header("location"), Some("/subscribe/thank-you"));
 
     // Verify row was inserted into database via db::query!
-    let row = db::query!("SELECT email FROM subscribers WHERE email = ?", "subscriber@example.com")
-        .fetch_one()
-        .await
-        .unwrap();
+    let row = db::query!(
+        "SELECT email FROM subscribers WHERE email = ?",
+        "subscriber@example.com"
+    )
+    .fetch_one()
+    .await
+    .unwrap();
     assert!(row.is_some());
     assert_eq!(row.unwrap().get("email").unwrap(), "subscriber@example.com");
 
     // 4. Test invalid subscriber submission -> HTTP 422 Unprocessable Entity
     let bad_res = client
-        .post("/subscribe", serde_json::json!({
-            "email": "invalid-email-address",
-            "channel": "rust-preview"
-        }))
+        .post(
+            "/subscribe",
+            serde_json::json!({
+                "email": "invalid-email-address",
+                "channel": "rust-preview"
+            }),
+        )
         .await;
 
-    assert_eq!(bad_res.status(), axum::http::StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(
+        bad_res.status(),
+        axum::http::StatusCode::UNPROCESSABLE_ENTITY
+    );
     let error_body = bad_res.text();
     assert!(error_body.contains("Validation failed"));
     assert!(error_body.contains("A valid email address with domain is required"));
@@ -2174,7 +2449,8 @@ async fn test_db_query_macro_and_dialect_compilation() {
         conn.execute(
             "CREATE TABLE products (id TEXT PRIMARY KEY, name TEXT, price REAL)",
             [],
-        ).unwrap();
+        )
+        .unwrap();
     });
     Database::set_global(db);
 
@@ -2197,10 +2473,14 @@ async fn test_db_query_macro_and_dialect_compilation() {
     let map = item.unwrap();
     assert_eq!(map.get("name").unwrap(), "Ergonomic Keyboard");
 
-    let count = db::query!("UPDATE products SET price = ? WHERE id = ?", 179.99, "p_101")
-        .execute()
-        .await
-        .unwrap();
+    let count = db::query!(
+        "UPDATE products SET price = ? WHERE id = ?",
+        179.99,
+        "p_101"
+    )
+    .execute()
+    .await
+    .unwrap();
     assert_eq!(count, 1);
 }
 
@@ -2216,20 +2496,25 @@ fn test_sqlite_embedded_database_engine_and_persistence() {
             username TEXT NOT NULL UNIQUE,
             email TEXT NOT NULL
         )",
-    ).unwrap();
+    )
+    .unwrap();
 
     // 2. Parameterized insertion
-    let affected = db.with_conn(|conn| {
-        conn.execute(
-            "INSERT INTO test_users (username, email) VALUES (?1, ?2)",
-            rusqlite::params!["pratik", "pratik@example.com"],
-        )
-    }).unwrap();
+    let affected = db
+        .with_conn(|conn| {
+            conn.execute(
+                "INSERT INTO test_users (username, email) VALUES (?1, ?2)",
+                rusqlite::params!["pratik", "pratik@example.com"],
+            )
+        })
+        .unwrap();
     assert_eq!(affected, 1);
 
     // 3. Query execution
     db.with_conn(|conn| {
-        let mut stmt = conn.prepare("SELECT username, email FROM test_users WHERE username = ?1").unwrap();
+        let mut stmt = conn
+            .prepare("SELECT username, email FROM test_users WHERE username = ?1")
+            .unwrap();
         let mut rows = stmt.query(rusqlite::params!["pratik"]).unwrap();
         let row = rows.next().unwrap().unwrap();
         let user: String = row.get(0).unwrap();
@@ -2278,11 +2563,17 @@ fn test_rfc2104_hmac_sha256_signed_session_cookies() {
 
     // 4. Rejection with tampered session payload
     let tampered_cookie = format!("tampered_{}", val);
-    assert_eq!(Session::verify_signed_cookie(&tampered_cookie, secret), None);
+    assert_eq!(
+        Session::verify_signed_cookie(&tampered_cookie, secret),
+        None
+    );
 
     // 5. Rejection with tampered signature
     if let Some((sid, _sig)) = val.split_once('.') {
-        let tampered_sig = format!("{}.0000000000000000000000000000000000000000000000000000000000000000", sid);
+        let tampered_sig = format!(
+            "{}.0000000000000000000000000000000000000000000000000000000000000000",
+            sid
+        );
         assert_eq!(Session::verify_signed_cookie(&tampered_sig, secret), None);
     }
 }
@@ -2319,7 +2610,10 @@ fn test_session_flash_bag_and_lifecycle() {
 
     // 3. Flash messages: present on first read, swept on subsequent cycle
     session.flash("success", "Profile updated successfully!");
-    assert_eq!(session.get_flash("success").as_deref(), Some("Profile updated successfully!"));
+    assert_eq!(
+        session.get_flash("success").as_deref(),
+        Some("Profile updated successfully!")
+    );
     assert!(session.has_flash("success"));
 
     // Sweep flashes (as happens at end of HTTP response lifecycle)
@@ -2338,15 +2632,24 @@ fn test_session_flash_bag_and_lifecycle() {
 fn test_redirect_with_flash_chaining() {
     let r1 = redirect("/dashboard").with_success("Order placed!");
     assert_eq!(r1.url, "/dashboard");
-    assert_eq!(r1.flash, Some(("success".to_string(), "Order placed!".to_string())));
+    assert_eq!(
+        r1.flash,
+        Some(("success".to_string(), "Order placed!".to_string()))
+    );
 
     let r2 = redirect("/login").with_error("Invalid credentials.");
     assert_eq!(r2.url, "/login");
-    assert_eq!(r2.flash, Some(("error".to_string(), "Invalid credentials.".to_string())));
+    assert_eq!(
+        r2.flash,
+        Some(("error".to_string(), "Invalid credentials.".to_string()))
+    );
 
     let r3 = redirect("/profile").with_warning("Email unverified.");
     assert_eq!(r3.url, "/profile");
-    assert_eq!(r3.flash, Some(("warning".to_string(), "Email unverified.".to_string())));
+    assert_eq!(
+        r3.flash,
+        Some(("warning".to_string(), "Email unverified.".to_string()))
+    );
 }
 
 #[test]
@@ -2356,7 +2659,10 @@ fn test_blade_style_view_engine_rendering() {
     session.flash("success", "Operation completed!");
     set_current_session(Some(session));
 
-    let v = view("Dashboard Portal", "<p class=\"text-zinc-600\">Welcome to Terminus Web</p>");
+    let v = view(
+        "Dashboard Portal",
+        "<p class=\"text-zinc-600\">Welcome to Terminus Web</p>",
+    );
 
     let html = v.render();
     assert!(html.contains("<!DOCTYPE html>"));
@@ -2400,7 +2706,10 @@ fn test_database_seeder_registry() {
             "TestUserSeeder"
         }
 
-        fn run(&self, _db: &terminus::orm::Database) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        fn run(
+            &self,
+            _db: &terminus::orm::Database,
+        ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             SEED_RUN_COUNT.fetch_add(1, Ordering::SeqCst);
             Ok(())
         }
@@ -2425,9 +2734,11 @@ fn test_task_scheduler_and_frequency() {
     let flag_clone = Arc::clone(&flag);
 
     let schedule = Schedule::new();
-    schedule.call("cleanup:temp", move || {
-        flag_clone.store(true, Ordering::SeqCst);
-    }).every_minute();
+    schedule
+        .call("cleanup:temp", move || {
+            flag_clone.store(true, Ordering::SeqCst);
+        })
+        .every_minute();
 
     assert_eq!(schedule.tasks().len(), 1);
     assert_eq!(schedule.tasks()[0].name, "cleanup:temp");
@@ -2439,15 +2750,12 @@ fn test_task_scheduler_and_frequency() {
 
 #[tokio::test]
 async fn test_session_axum_extractor_and_cookie_resolution() {
-    use terminus::prelude::*;
     use axum::extract::FromRequestParts;
     use axum::http::Request;
+    use terminus::prelude::*;
 
     // 1. Session extractor with no cookies generates a fresh active session
-    let req = Request::builder()
-        .uri("/dashboard")
-        .body(())
-        .unwrap();
+    let req = Request::builder().uri("/dashboard").body(()).unwrap();
     let (mut parts, _) = req.into_parts();
     let session = Session::from_request_parts(&mut parts, &()).await.unwrap();
     assert!(!session.id().is_empty());
@@ -2463,7 +2771,10 @@ async fn test_session_axum_extractor_and_cookie_resolution() {
     let (mut parts2, _) = req2.into_parts();
     let recovered_session = Session::from_request_parts(&mut parts2, &()).await.unwrap();
     assert_eq!(recovered_session.id(), session.id());
-    assert_eq!(recovered_session.get("user_email").as_deref(), Some("operator@terminus.dev"));
+    assert_eq!(
+        recovered_session.get("user_email").as_deref(),
+        Some("operator@terminus.dev")
+    );
 }
 
 #[test]
@@ -2485,17 +2796,23 @@ fn test_csrf_field_and_token_helpers() {
 
 #[test]
 fn test_cryptographic_secure_random_entropy() {
-    use terminus::prelude::*;
     use std::collections::HashSet;
+    use terminus::prelude::*;
 
     let mut generated = HashSet::new();
     for _ in 0..100 {
         let hex = secure_random_hex(16);
         assert_eq!(hex.len(), 32);
-        assert!(generated.insert(hex), "Detected duplicate entropy generation");
+        assert!(
+            generated.insert(hex),
+            "Detected duplicate entropy generation"
+        );
     }
 
     let mut buf = [0u8; 32];
     secure_random_bytes(&mut buf);
-    assert!(buf.iter().any(|&b| b != 0), "Entropy buffer must not be all zeroes");
+    assert!(
+        buf.iter().any(|&b| b != 0),
+        "Entropy buffer must not be all zeroes"
+    );
 }

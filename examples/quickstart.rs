@@ -1,5 +1,5 @@
-use terminus::prelude::*;
 use std::sync::Arc;
+use terminus::prelude::*;
 
 pub struct UserResource {
     repo: Arc<dyn UserRepository>,
@@ -29,22 +29,25 @@ impl Resource for UserResource {
             .column(Column::text("id").label("ID").sortable())
             .column(Column::text("name").label("Name").searchable().sortable())
             .column(Column::text("email").label("Email").searchable())
-            .column(Column::badge("role", vec![
-                ("Founder", "amber"),
-                ("Admin", "blue"),
-                ("Member", "slate"),
-            ]))
-            .column(Column::badge("status", vec![
-                ("Active", "emerald"),
-                ("Suspended", "rose"),
-            ]))
+            .column(Column::badge(
+                "role",
+                vec![("Founder", "amber"), ("Admin", "blue"), ("Member", "slate")],
+            ))
+            .column(Column::badge(
+                "status",
+                vec![("Active", "emerald"), ("Suspended", "rose")],
+            ))
             .page_size(8)
     }
 
     fn form(&self) -> Form {
         Form::new()
             .field(FormField::text("name").required().placeholder("Full Name"))
-            .field(FormField::email("email").required().placeholder("email@example.com"))
+            .field(
+                FormField::email("email")
+                    .required()
+                    .placeholder("email@example.com"),
+            )
     }
 
     fn fetch_rows(&self, query: &QueryState) -> (Vec<RowData>, usize) {
@@ -83,9 +86,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let admin = AdminPanel::new()
         .brand_name("Terminus Admin")
         .users(identity_repo.clone())
-        .authenticate_with(move |email, password| {
-            credentials.verify_credentials(email, password)
-        })
+        .authenticate_with(move |email, password| credentials.verify_credentials(email, password))
         .resource(UserResource::new(identity_repo));
 
     // With a stable APP_KEY (at least 32 bytes), sessions persist across

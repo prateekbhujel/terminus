@@ -14,14 +14,14 @@ fn events_dispatch_to_registered_listeners_in_order() {
         });
     }
     assert_eq!(
-        bus.dispatch(Event::new(
-            "order.created",
-            serde_json::json!({ "id": 7 })
-        )),
+        bus.dispatch(Event::new("order.created", serde_json::json!({ "id": 7 }))),
         2
     );
     assert_eq!(seen.lock().unwrap().join(","), "first:7,second:7");
-    assert_eq!(bus.dispatch(Event::new("unknown", serde_json::json!({}))), 0);
+    assert_eq!(
+        bus.dispatch(Event::new("unknown", serde_json::json!({}))),
+        0
+    );
 }
 
 #[test]
@@ -36,7 +36,10 @@ fn local_storage_roundtrips_and_rejects_traversal() {
     ));
     let storage = LocalStorage::new(&dir).unwrap();
     storage.put("docs/readme.txt", b"hello").unwrap();
-    assert_eq!(storage.get("docs/readme.txt").unwrap().as_deref(), Some(b"hello".as_slice()));
+    assert_eq!(
+        storage.get("docs/readme.txt").unwrap().as_deref(),
+        Some(b"hello".as_slice())
+    );
     assert!(storage.exists("docs/readme.txt"));
     assert_eq!(storage.url("docs/readme.txt"), "/storage/docs/readme.txt");
     assert!(storage.put("../escape.txt", b"x").is_err());
@@ -64,7 +67,11 @@ async fn app_rate_limit_returns_429_after_the_limit() {
         .rate_limit(2, std::time::Duration::from_secs(60))
         .get("/", || async { "ok" })
         .build();
-    for expected in [StatusCode::OK, StatusCode::OK, StatusCode::TOO_MANY_REQUESTS] {
+    for expected in [
+        StatusCode::OK,
+        StatusCode::OK,
+        StatusCode::TOO_MANY_REQUESTS,
+    ] {
         let response = app
             .clone()
             .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
@@ -74,11 +81,38 @@ async fn app_rate_limit_returns_429_after_the_limit() {
     }
 }
 
+#[cfg(any(feature = "redis", feature = "mongodb"))]
+fn external_test_url(var: &str, service: &str) -> Option<String> {
+    if let Ok(url) = std::env::var(var) {
+        let trimmed = url.trim().to_string();
+        if !trimmed.is_empty() {
+            return Some(trimmed);
+        }
+    }
+    let required = std::env::var("TERMINUS_REQUIRE_EXTERNAL_TESTS")
+        .ok()
+        .map(|raw| {
+            let val = raw.trim().to_ascii_lowercase();
+            match val.as_str() {
+                "1" | "true" | "sql" => matches!(service, "postgres" | "mysql" | "redis"),
+                "all" => true,
+                _ => val.split(',').any(|item| item.trim() == service),
+            }
+        })
+        .unwrap_or(false);
+    if required {
+        panic!(
+            "{var} must be set when TERMINUS_REQUIRE_EXTERNAL_TESTS requires '{service}' (external-service tests must not silently skip)"
+        );
+    }
+    eprintln!("skipping: {var} not set");
+    None
+}
+
 #[cfg(feature = "redis")]
 #[test]
 fn redis_cache_roundtrip_when_configured() {
-    let Ok(url) = std::env::var("TERMINUS_TEST_REDIS_URL") else {
-        eprintln!("skipping: TERMINUS_TEST_REDIS_URL not set");
+    let Some(url) = external_test_url("TERMINUS_TEST_REDIS_URL", "redis") else {
         return;
     };
     let cache = RedisCache::new(&url).unwrap();
@@ -92,8 +126,7 @@ fn redis_cache_roundtrip_when_configured() {
 #[cfg(feature = "mongodb")]
 #[tokio::test]
 async fn mongo_store_roundtrip_when_configured() {
-    let Ok(url) = std::env::var("TERMINUS_TEST_MONGO_URL") else {
-        eprintln!("skipping: TERMINUS_TEST_MONGO_URL not set");
+    let Some(url) = external_test_url("TERMINUS_TEST_MONGO_URL", "mongodb") else {
         return;
     };
     let store = MongoStore::connect(&url, "terminus_test").await.unwrap();
@@ -105,7 +138,10 @@ async fn mongo_store_roundtrip_when_configured() {
         .insert("widgets", serde_json::json!({ "sku": "KB-1", "qty": 3 }))
         .await
         .unwrap();
-    assert_eq!(store.count("widgets", serde_json::json!({})).await.unwrap(), 1);
+    assert_eq!(
+        store.count("widgets", serde_json::json!({})).await.unwrap(),
+        1
+    );
     let found = store
         .find("widgets", serde_json::json!({ "sku": "KB-1" }))
         .await

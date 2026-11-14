@@ -124,12 +124,19 @@ impl OAuthClient {
             .map_err(|e| e.to_string())?;
         let id = raw
             .get("id")
-            .and_then(|v| v.as_i64().map(|n| n.to_string()).or_else(|| v.as_str().map(str::to_string)))
+            .and_then(|v| {
+                v.as_i64()
+                    .map(|n| n.to_string())
+                    .or_else(|| v.as_str().map(str::to_string))
+            })
             .or_else(|| raw.get("sub").and_then(|v| v.as_str().map(str::to_string)))
             .ok_or("OAuth userinfo response has no id")?;
         Ok(OAuthUser {
             id,
-            email: raw.get("email").and_then(|v| v.as_str()).map(str::to_string),
+            email: raw
+                .get("email")
+                .and_then(|v| v.as_str())
+                .map(str::to_string),
             name: raw
                 .get("name")
                 .and_then(|v| v.as_str())

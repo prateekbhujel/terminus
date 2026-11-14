@@ -1,7 +1,7 @@
+use crate::form::Form;
+use crate::table::Table;
 use std::collections::HashMap;
 use std::sync::Arc;
-use crate::table::Table;
-use crate::form::Form;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FormMode {
@@ -85,7 +85,9 @@ pub fn headline(s: &str) -> String {
             let mut chars = w.chars();
             match chars.next() {
                 None => String::new(),
-                Some(f) => f.to_uppercase().collect::<String>() + chars.as_str().to_lowercase().as_str(),
+                Some(f) => {
+                    f.to_uppercase().collect::<String>() + chars.as_str().to_lowercase().as_str()
+                }
             }
         })
         .collect::<Vec<String>>()
@@ -251,12 +253,14 @@ pub trait Resource: Send + Sync {
         let target_rows: Vec<RowData> = if ids.is_empty() {
             all_rows
         } else {
-            all_rows.into_iter().filter(|r| ids.contains(&r.id)).collect()
+            all_rows
+                .into_iter()
+                .filter(|r| ids.contains(&r.id))
+                .collect()
         };
 
         if format.eq_ignore_ascii_case("json") {
-            let json_val = serde_json::to_string_pretty(&target_rows)
-                .map_err(|e| e.to_string())?;
+            let json_val = serde_json::to_string_pretty(&target_rows).map_err(|e| e.to_string())?;
             return Ok(json_val);
         }
 
@@ -286,7 +290,10 @@ pub trait Resource: Send + Sync {
         match action_id {
             "replicate" => {
                 let new_id = self.replicate_row(record_id)?;
-                Ok(format!("Record `{}` replicated successfully as `{}`", record_id, new_id))
+                Ok(format!(
+                    "Record `{}` replicated successfully as `{}`",
+                    record_id, new_id
+                ))
             }
             _ => Err(format!("Action `{}` not handled by resource", action_id)),
         }
@@ -295,8 +302,13 @@ pub trait Resource: Send + Sync {
     /// Custom bulk action dispatcher
     fn handle_bulk_action(&self, action_id: &str, record_ids: &[String]) -> Result<String, String> {
         match action_id {
-            "delete" => self.bulk_delete(record_ids).map(|c| format!("Deleted {} records", c)),
-            _ => Err(format!("Bulk action `{}` not handled by resource", action_id)),
+            "delete" => self
+                .bulk_delete(record_ids)
+                .map(|c| format!("Deleted {} records", c)),
+            _ => Err(format!(
+                "Bulk action `{}` not handled by resource",
+                action_id
+            )),
         }
     }
 }
@@ -333,19 +345,39 @@ impl Resource for AuditLogResource {
 
     fn table(&self) -> Table {
         Table::new()
-            .column(crate::table::Column::text("timestamp").label("Timestamp").sortable())
-            .column(crate::table::Column::text("userName").label("Operator").searchable().sortable())
-            .column(crate::table::Column::badge("action", vec![
-                ("CREATE", "emerald"),
-                ("UPDATE", "blue"),
-                ("DELETE", "rose"),
-            ]))
-            .column(crate::table::Column::badge("resource", vec![
-                ("users", "amber"),
-                ("orders", "indigo"),
-            ]))
-            .column(crate::table::Column::text("recordId").label("Target ID").searchable())
-            .column(crate::table::Column::text("details").label("Change Summary").searchable())
+            .column(
+                crate::table::Column::text("timestamp")
+                    .label("Timestamp")
+                    .sortable(),
+            )
+            .column(
+                crate::table::Column::text("userName")
+                    .label("Operator")
+                    .searchable()
+                    .sortable(),
+            )
+            .column(crate::table::Column::badge(
+                "action",
+                vec![
+                    ("CREATE", "emerald"),
+                    ("UPDATE", "blue"),
+                    ("DELETE", "rose"),
+                ],
+            ))
+            .column(crate::table::Column::badge(
+                "resource",
+                vec![("users", "amber"), ("orders", "indigo")],
+            ))
+            .column(
+                crate::table::Column::text("recordId")
+                    .label("Target ID")
+                    .searchable(),
+            )
+            .column(
+                crate::table::Column::text("details")
+                    .label("Change Summary")
+                    .searchable(),
+            )
             .page_size(8)
     }
 

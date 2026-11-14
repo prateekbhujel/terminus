@@ -33,7 +33,8 @@ impl<T: Debug> Expectation<T> {
         assert!(
             self.value == expected,
             "Expectation failed: expected `{:?}` to be `{:?}`",
-            self.value, expected
+            self.value,
+            expected
         );
         self
     }
@@ -54,7 +55,8 @@ impl<T: Debug> Expectation<T> {
         assert!(
             self.value != unexpected,
             "Expectation failed: expected `{:?}` to NOT be `{:?}`",
-            self.value, unexpected
+            self.value,
+            unexpected
         );
         self
     }
@@ -91,7 +93,8 @@ impl<T: Debug> Expectation<T> {
         assert!(
             self.value > other,
             "Expectation failed: expected `{:?}` to be greater than `{:?}`",
-            self.value, other
+            self.value,
+            other
         );
         self
     }
@@ -104,7 +107,8 @@ impl<T: Debug> Expectation<T> {
         assert!(
             self.value < other,
             "Expectation failed: expected `{:?}` to be less than `{:?}`",
-            self.value, other
+            self.value,
+            other
         );
         self
     }
@@ -131,7 +135,8 @@ impl<T: AsRef<str>> Expectation<T> {
         assert!(
             s.contains(needle),
             "Expectation failed: expected string `{}` to contain `{}`",
-            s, needle
+            s,
+            needle
         );
         self
     }
@@ -142,7 +147,8 @@ impl<T: AsRef<str>> Expectation<T> {
         assert!(
             !s.contains(needle),
             "Expectation failed: expected string `{}` to NOT contain `{}`",
-            s, needle
+            s,
+            needle
         );
         self
     }

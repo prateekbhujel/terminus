@@ -98,7 +98,10 @@ impl FormField {
         Self::new_field(
             name,
             FieldType::Select {
-                options: options.into_iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+                options: options
+                    .into_iter()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect(),
             },
         )
     }
@@ -107,7 +110,10 @@ impl FormField {
         Self::new_field(
             name,
             FieldType::SearchableSelect {
-                options: options.into_iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+                options: options
+                    .into_iter()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect(),
             },
         )
     }

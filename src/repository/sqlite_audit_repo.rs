@@ -1,8 +1,8 @@
-use std::sync::{Arc, Mutex};
-use rusqlite::{params, Connection};
 use crate::domain::audit::AuditLog;
 use crate::repository::AuditRepository;
 use crate::resource::QueryState;
+use rusqlite::{params, Connection};
+use std::sync::{Arc, Mutex};
 
 pub struct SqliteAuditRepository {
     conn: Arc<Mutex<Connection>>,
@@ -44,10 +44,15 @@ impl AuditRepository for SqliteAuditRepository {
         let total: usize = if query.search.is_empty() {
             db.query_row(&count_sql, [], |r| r.get(0)).unwrap_or(0)
         } else {
-            db.query_row(&count_sql, params![search_pattern], |r| r.get(0)).unwrap_or(0)
+            db.query_row(&count_sql, params![search_pattern], |r| r.get(0))
+                .unwrap_or(0)
         };
 
-        let per_page = if query.per_page == 0 { 8 } else { query.per_page };
+        let per_page = if query.per_page == 0 {
+            8
+        } else {
+            query.per_page
+        };
         let page = if query.page == 0 { 1 } else { query.page };
         let offset = (page - 1) * per_page;
 
@@ -87,7 +92,10 @@ impl AuditRepository for SqliteAuditRepository {
                     details,
                     timestamp,
                 })
-            }).unwrap().collect::<Result<Vec<_>, _>>().unwrap_or_default()
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap_or_default()
         } else {
             stmt.query_map(params![search_pattern, per_page, offset], |row| {
                 let id: i64 = row.get(0)?;
@@ -107,7 +115,10 @@ impl AuditRepository for SqliteAuditRepository {
                     details,
                     timestamp,
                 })
-            }).unwrap().collect::<Result<Vec<_>, _>>().unwrap_or_default()
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap_or_default()
         };
 
         (log_iter, total)

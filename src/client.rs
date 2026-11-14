@@ -18,7 +18,11 @@ impl Platform {
     /// Detect client platform from HTTP User-Agent string
     pub fn from_user_agent(user_agent: &str) -> Self {
         let ua = user_agent.to_lowercase();
-        if ua.contains("android") || ua.contains("iphone") || ua.contains("ipad") || ua.contains("mobile") {
+        if ua.contains("android")
+            || ua.contains("iphone")
+            || ua.contains("ipad")
+            || ua.contains("mobile")
+        {
             Self::Mobile
         } else if ua.contains("desktop") || ua.contains("tauri") || ua.contains("electron") {
             Self::Desktop
@@ -58,7 +62,10 @@ impl SdkGenerator {
     }
 
     pub fn type_schema(mut self, name: impl Into<String>, fields: Vec<(&str, &str)>) -> Self {
-        let field_pairs = fields.into_iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        let field_pairs = fields
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
         self.type_schemas.insert(name.into(), field_pairs);
         self
     }
@@ -88,7 +95,10 @@ impl SdkGenerator {
         for ep in &self.endpoints {
             let method_lower = ep.method.to_lowercase();
             let mut operation = serde_json::Map::new();
-            operation.insert("summary".to_string(), serde_json::Value::String(ep.description.clone()));
+            operation.insert(
+                "summary".to_string(),
+                serde_json::Value::String(ep.description.clone()),
+            );
             operation.insert(
                 "operationId".to_string(),
                 serde_json::Value::String(format!(
@@ -135,7 +145,10 @@ impl SdkGenerator {
                     }
                 }),
             );
-            operation.insert("responses".to_string(), serde_json::Value::Object(responses));
+            operation.insert(
+                "responses".to_string(),
+                serde_json::Value::Object(responses),
+            );
 
             let mut method_map = serde_json::Map::new();
             method_map.insert(method_lower, serde_json::Value::Object(operation));
@@ -185,7 +198,10 @@ impl SdkGenerator {
     /// Generate strongly-typed TypeScript client SDK
     pub fn to_typescript(&self) -> String {
         let mut ts = String::new();
-        ts.push_str(&format!("// Auto-generated TypeScript Client for {}\n", self.app_name));
+        ts.push_str(&format!(
+            "// Auto-generated TypeScript Client for {}\n",
+            self.app_name
+        ));
         ts.push_str(&format!("// API Version: {}\n\n", self.version));
 
         // Generate TypeScript interfaces
@@ -199,7 +215,8 @@ impl SdkGenerator {
 
         // Generate API Client Class
         let class_name = {
-            let sanitized: String = self.app_name
+            let sanitized: String = self
+                .app_name
                 .split(|c: char| !c.is_alphanumeric())
                 .filter(|s| !s.is_empty())
                 .map(|s| {
@@ -224,7 +241,9 @@ impl SdkGenerator {
         ts.push_str("    this.token = token;\n");
         ts.push_str("  }\n\n");
 
-        ts.push_str("  private async request<T>(method: string, path: string, body?: any): Promise<T> {\n");
+        ts.push_str(
+            "  private async request<T>(method: string, path: string, body?: any): Promise<T> {\n",
+        );
         ts.push_str("    const headers: Record<string, string> = {\n");
         ts.push_str("      'Content-Type': 'application/json',\n");
         ts.push_str("      'Accept': 'application/json',\n");
@@ -238,8 +257,12 @@ impl SdkGenerator {
         ts.push_str("      body: body ? JSON.stringify(body) : undefined,\n");
         ts.push_str("    });\n");
         ts.push_str("    if (!res.ok) {\n");
-        ts.push_str("      const err = await res.json().catch(() => ({ message: res.statusText }));\n");
-        ts.push_str("      throw new Error(err.message || `Request failed with status ${res.status}`);\n");
+        ts.push_str(
+            "      const err = await res.json().catch(() => ({ message: res.statusText }));\n",
+        );
+        ts.push_str(
+            "      throw new Error(err.message || `Request failed with status ${res.status}`);\n",
+        );
         ts.push_str("    }\n");
         ts.push_str("    return res.json();\n");
         ts.push_str("  }\n\n");

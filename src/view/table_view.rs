@@ -1,14 +1,26 @@
 use crate::resource::{FormMode, QueryState, Resource};
 use crate::table::{Column, ColumnType, TableStyle};
 
-pub fn render_table_partial(resource: &dyn Resource, query: &QueryState, user: &crate::domain::User) -> String {
+pub fn render_table_partial(
+    resource: &dyn Resource,
+    query: &QueryState,
+    user: &crate::domain::User,
+) -> String {
     let table_def = resource.table();
     let (rows, total_count) = resource.fetch_rows(query);
 
-    let per_page = if query.per_page == 0 { 8 } else { query.per_page };
+    let per_page = if query.per_page == 0 {
+        8
+    } else {
+        query.per_page
+    };
     let current_page = if query.page == 0 { 1 } else { query.page };
     let total_pages = total_count.div_ceil(per_page);
-    let start_idx = if total_count == 0 { 0 } else { (current_page - 1) * per_page + 1 };
+    let start_idx = if total_count == 0 {
+        0
+    } else {
+        (current_page - 1) * per_page + 1
+    };
     let end_idx = (start_idx + rows.len()).saturating_sub(1);
 
     let cell_padding = match table_def.style {
@@ -68,8 +80,14 @@ pub fn render_table_partial(resource: &dyn Resource, query: &QueryState, user: &
     let mut body_rows = String::new();
     if rows.is_empty() {
         let cols_len = table_def.columns.len() + 2;
-        let empty_heading = table_def.empty_state_heading.as_deref().unwrap_or("No records matching criteria.");
-        let empty_desc = table_def.empty_state_description.as_deref().unwrap_or("Try adjusting your search or filters to find what you're looking for.");
+        let empty_heading = table_def
+            .empty_state_heading
+            .as_deref()
+            .unwrap_or("No records matching criteria.");
+        let empty_desc = table_def
+            .empty_state_description
+            .as_deref()
+            .unwrap_or("Try adjusting your search or filters to find what you're looking for.");
         body_rows.push_str(&format!(
             r#"<tr><td colspan="{cols_len}" class="px-5 py-14 text-center text-zinc-500 text-xs">
                 <div class="flex flex-col items-center justify-center gap-2 max-w-sm mx-auto">
@@ -108,7 +126,8 @@ pub fn render_table_partial(resource: &dyn Resource, query: &QueryState, user: &
             }
 
             // Edit, Replicate, Custom Actions, and Delete with policy enforcement
-            let row_values_json = serde_json::to_string(&row.values).unwrap_or_else(|_| "{}".to_string());
+            let row_values_json =
+                serde_json::to_string(&row.values).unwrap_or_else(|_| "{}".to_string());
             let escaped_row_values_json = row_values_json.replace('"', "&quot;");
 
             let mut actions_html = String::new();
@@ -145,8 +164,15 @@ pub fn render_table_partial(resource: &dyn Resource, query: &QueryState, user: &
 
             // Custom table actions
             for custom_act in &table_def.actions {
-                if custom_act.id != "edit" && custom_act.id != "delete" && custom_act.id != "replicate" && custom_act.id != "view" {
-                    let heading = custom_act.modal_heading.as_deref().unwrap_or(&custom_act.label);
+                if custom_act.id != "edit"
+                    && custom_act.id != "delete"
+                    && custom_act.id != "replicate"
+                    && custom_act.id != "view"
+                {
+                    let heading = custom_act
+                        .modal_heading
+                        .as_deref()
+                        .unwrap_or(&custom_act.label);
                     let desc = custom_act.modal_description.as_deref().unwrap_or("");
                     actions_html.push_str(&format!(
                         r#"<button type="button" onclick="executeRowAction('{slug}', '{action_id}', '{id}', {req_confirm}, '{heading}', '{desc}')" class="p-1 rounded text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors" title="{label}">
@@ -174,16 +200,14 @@ pub fn render_table_partial(resource: &dyn Resource, query: &QueryState, user: &
             }
 
             if actions_html.is_empty() {
-                actions_html = r#"<span class="text-zinc-600 text-xs select-none">—</span>"#.to_string();
+                actions_html =
+                    r#"<span class="text-zinc-600 text-xs select-none">—</span>"#.to_string();
             }
 
             row_tds.push_str(&format!(r#"<td class="{cell_padding} whitespace-nowrap text-xs text-right space-x-1">{actions_html}</td>"#));
 
             let row_bg_class = match table_def.style {
-                TableStyle::Striped
-                    if idx % 2 == 1 => {
-                        "bg-zinc-900/40 hover:bg-zinc-850/60"
-                    }
+                TableStyle::Striped if idx % 2 == 1 => "bg-zinc-900/40 hover:bg-zinc-850/60",
                 _ => "hover:bg-zinc-850/50",
             };
 
@@ -192,8 +216,16 @@ pub fn render_table_partial(resource: &dyn Resource, query: &QueryState, user: &
     }
 
     // Build Pagination HTML
-    let prev_disabled = if current_page <= 1 { "opacity-30 pointer-events-none" } else { "" };
-    let next_disabled = if current_page >= total_pages || total_pages == 0 { "opacity-30 pointer-events-none" } else { "" };
+    let prev_disabled = if current_page <= 1 {
+        "opacity-30 pointer-events-none"
+    } else {
+        ""
+    };
+    let next_disabled = if current_page >= total_pages || total_pages == 0 {
+        "opacity-30 pointer-events-none"
+    } else {
+        ""
+    };
 
     let create_btn_html = if resource.can_create(user) {
         match resource.form_mode() {
@@ -246,8 +278,14 @@ pub fn render_table_partial(resource: &dyn Resource, query: &QueryState, user: &
             ));
         } else if ba.id == "delete" {
             if resource.can_delete(user) {
-                let heading = ba.modal_heading.as_deref().unwrap_or("Delete Selected Records");
-                let desc = ba.modal_description.as_deref().unwrap_or("Are you sure you want to permanently delete all selected records?");
+                let heading = ba
+                    .modal_heading
+                    .as_deref()
+                    .unwrap_or("Delete Selected Records");
+                let desc = ba
+                    .modal_description
+                    .as_deref()
+                    .unwrap_or("Are you sure you want to permanently delete all selected records?");
                 bulk_buttons_html.push_str(&format!(
                     r#"<button type="button" onclick="executeBulkAction('{slug}', 'delete', true, '{heading}', '{desc}')" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-medium transition-colors">
                         <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
@@ -279,11 +317,21 @@ pub fn render_table_partial(resource: &dyn Resource, query: &QueryState, user: &
     // Build Table Filters HTML
     let mut filters_html = String::new();
     for filter in &table_def.filters {
-        let current_val = query.filters.get(&filter.name).map(|s| s.as_str()).unwrap_or("");
+        let current_val = query
+            .filters
+            .get(&filter.name)
+            .map(|s| s.as_str())
+            .unwrap_or("");
         let mut opts = format!(r#"<option value="">All {}</option>"#, filter.label);
         for (opt_val, opt_label) in &filter.options {
-            let sel = if opt_val == current_val { "selected" } else { "" };
-            opts.push_str(&format!(r#"<option value="{opt_val}" {sel}>{opt_label}</option>"#));
+            let sel = if opt_val == current_val {
+                "selected"
+            } else {
+                ""
+            };
+            opts.push_str(&format!(
+                r#"<option value="{opt_val}" {sel}>{opt_label}</option>"#
+            ));
         }
         filters_html.push_str(&format!(
             r#"<select onchange="onFilterChange('{slug}', '{name}', this.value)" class="px-2.5 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-xs text-zinc-300 focus:outline-none focus:border-zinc-600 transition-colors font-sans">
@@ -413,7 +461,12 @@ fn render_cell(col: &Column, val: &str) -> String {
 
     match &col.column_type {
         ColumnType::Text | ColumnType::Numeric => {
-            if col.name == "id" || col.name == "email" || col.name == "amount" || col.name == "record_id" || col.name == "recordId" {
+            if col.name == "id"
+                || col.name == "email"
+                || col.name == "amount"
+                || col.name == "record_id"
+                || col.name == "recordId"
+            {
                 format!(r#"<span class="font-mono text-zinc-300">{val}</span>"#)
             } else {
                 format!(r#"<span class="font-medium text-zinc-100">{val}</span>"#)
@@ -441,7 +494,11 @@ fn render_cell(col: &Column, val: &str) -> String {
                 .unwrap_or("slate");
 
             let (badge_bg, badge_text, badge_border) = match color_classes {
-                "emerald" | "green" => ("bg-emerald-500/10", "text-emerald-400", "border-emerald-500/20"),
+                "emerald" | "green" => (
+                    "bg-emerald-500/10",
+                    "text-emerald-400",
+                    "border-emerald-500/20",
+                ),
                 "indigo" | "blue" => ("bg-blue-500/10", "text-blue-400", "border-blue-500/20"),
                 "amber" | "yellow" => ("bg-amber-500/10", "text-amber-400", "border-amber-500/20"),
                 "rose" | "red" => ("bg-rose-500/10", "text-rose-400", "border-rose-500/20"),

@@ -140,10 +140,12 @@ async fn concurrent_requests_scope_user_request_and_session_across_awaits() {
                 let barrier = barrier.clone();
                 async move {
                     assert!(auth().is_none());
-                    let mut user = User::new("2", "Test Admin", "admin@example.test", Role::Superadmin);
+                    let mut user =
+                        User::new("2", "Test Admin", "admin@example.test", Role::Superadmin);
                     user.id = id.clone();
                     set_current_user(Some(user));
-                    let mut nested_user = User::new("2", "Test Admin", "admin@example.test", Role::Superadmin);
+                    let mut nested_user =
+                        User::new("2", "Test Admin", "admin@example.test", Role::Superadmin);
                     nested_user.id = "nested".into();
                     with_user(nested_user, || {
                         assert_eq!(user_id().as_deref(), Some("nested"))
@@ -164,7 +166,12 @@ async fn concurrent_requests_scope_user_request_and_session_across_awaits() {
             }
         })
         .build();
-    set_current_user(Some(User::new("2", "Test Admin", "admin@example.test", Role::Superadmin)));
+    set_current_user(Some(User::new(
+        "2",
+        "Test Admin",
+        "admin@example.test",
+        Role::Superadmin,
+    )));
     let (first, second) = tokio::join!(
         app.clone().oneshot(
             Request::builder()
@@ -246,7 +253,8 @@ async fn explicit_task_scopes_override_and_restore_app_request_context() {
             let base_session = session();
             let scoped_session = Session::new();
             let scoped_id = scoped_session.id().to_string();
-            let mut scoped_user = User::new("2", "Test Admin", "admin@example.test", Role::Superadmin);
+            let mut scoped_user =
+                User::new("2", "Test Admin", "admin@example.test", Role::Superadmin);
             scoped_user.id = "task-user".into();
             TASK_USER
                 .scope(
@@ -269,7 +277,12 @@ async fn explicit_task_scopes_override_and_restore_app_request_context() {
             assert_eq!(request().path(), "/");
             assert_eq!(session().id(), base_session.id());
 
-            set_current_user(Some(User::new("2", "Test Admin", "admin@example.test", Role::Superadmin)));
+            set_current_user(Some(User::new(
+                "2",
+                "Test Admin",
+                "admin@example.test",
+                Role::Superadmin,
+            )));
             TASK_USER
                 .scope(None, async {
                     assert!(auth().is_none());

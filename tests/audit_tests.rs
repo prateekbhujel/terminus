@@ -1,5 +1,5 @@
-use terminus::prelude::*;
 use std::sync::{Arc, Mutex};
+use terminus::prelude::*;
 
 #[test]
 fn test_in_memory_audit_repo() {
@@ -35,7 +35,10 @@ fn test_sqlite_audit_repo_in_memory_db() {
     let repo = SqliteAuditRepository::new(conn).expect("Should initialize audit table");
 
     let (seeded_logs, total) = repo.list(&QueryState::default());
-    assert_eq!(total, 0, "Fresh audit repositories start empty; nothing is seeded");
+    assert_eq!(
+        total, 0,
+        "Fresh audit repositories start empty; nothing is seeded"
+    );
     assert!(seeded_logs.is_empty());
 
     let new_log = AuditLog {

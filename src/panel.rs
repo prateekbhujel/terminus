@@ -1,5 +1,9 @@
-use std::collections::HashMap;
-use std::sync::Arc;
+use crate::auth;
+use crate::domain::audit::AuditLog;
+use crate::domain::user::User;
+use crate::repository::{AuditRepository, UserRepository};
+use crate::resource::{DynResource, QueryState, Resource};
+use crate::view::{dashboard_view, dialogs, form_page, layout, table_view};
 use axum::{
     extract::{Form, Path, Query, State},
     http::header::{AUTHORIZATION, CONTENT_DISPOSITION, CONTENT_TYPE, SET_COOKIE},
@@ -9,12 +13,8 @@ use axum::{
     Router,
 };
 use serde::Deserialize;
-use crate::auth;
-use crate::domain::audit::AuditLog;
-use crate::domain::user::User;
-use crate::repository::{AuditRepository, UserRepository};
-use crate::resource::{DynResource, QueryState, Resource};
-use crate::view::{dashboard_view, dialogs, form_page, layout, table_view};
+use std::collections::HashMap;
+use std::sync::Arc;
 
 type CredentialVerifier = dyn Fn(&str, &str) -> Option<User> + Send + Sync;
 
@@ -88,7 +88,8 @@ impl AdminPanel {
 
     pub fn register<R: Resource + 'static>(mut self, resource: R) -> Self {
         let arc_res: DynResource = Arc::new(resource);
-        self.resource_map.insert(arc_res.slug().to_string(), arc_res.clone());
+        self.resource_map
+            .insert(arc_res.slug().to_string(), arc_res.clone());
         self.resources.push(arc_res);
         self
     }
@@ -186,7 +187,8 @@ impl AdminPanel {
     pub fn module<M: crate::module::AppModule + 'static>(mut self, module: M) -> Self {
         let arc_mod: Arc<dyn crate::module::AppModule> = Arc::new(module);
         if let Some(res) = arc_mod.resource() {
-            self.resource_map.insert(res.slug().to_string(), res.clone());
+            self.resource_map
+                .insert(res.slug().to_string(), res.clone());
             self.resources.push(res);
         }
         self.modules.push(arc_mod);
@@ -214,65 +216,106 @@ impl AdminPanel {
         let shared_panel = Arc::new(self);
 
         let mut router = Router::new()
-            .route("/ws", get({
-                let broadcaster = shared_panel.get_broadcaster();
-                move |ws| crate::ws::ws_handler(ws, broadcaster)
-            }))
-            .route("/login", get(login_page).post({
-                let panel = shared_panel.clone();
-                move |form| login_submit(panel, form)
-            }))
+            .route(
+                "/ws",
+                get({
+                    let broadcaster = shared_panel.get_broadcaster();
+                    move |ws| crate::ws::ws_handler(ws, broadcaster)
+                }),
+            )
+            .route(
+                "/login",
+                get(login_page).post({
+                    let panel = shared_panel.clone();
+                    move |form| login_submit(panel, form)
+                }),
+            )
             .route("/logout", post(logout_handler))
-            .route("/", get({
-                let panel = shared_panel.clone();
-                move |headers| root_redirect(panel, headers)
-            }))
-            .route("/dashboard", get({
-                let panel = shared_panel.clone();
-                move |headers| dashboard_page(panel, headers)
-            }))
-            .route("/:slug", get({
-                let panel = shared_panel.clone();
-                move |headers, path, query| resource_page(panel, headers, path, query)
-            }))
-            .route("/:slug/table", get({
-                let panel = shared_panel.clone();
-                move |headers, path, query| resource_table_partial(panel, headers, path, query)
-            }))
-            .route("/:slug/api", get({
-                let panel = shared_panel.clone();
-                move |headers, path, query| resource_json_api(panel, headers, path, query)
-            }))
-            .route("/:slug/create", get({
-                let panel = shared_panel.clone();
-                move |headers, path| resource_create_page(panel, headers, path)
-            }).post({
-                let panel = shared_panel.clone();
-                move |headers, path, form| resource_create(panel, headers, path, form)
-            }))
-            .route("/:slug/edit/:id", get({
-                let panel = shared_panel.clone();
-                move |headers, path| resource_edit_page(panel, headers, path)
-            }).post({
-                let panel = shared_panel.clone();
-                move |headers, path, form| resource_update(panel, headers, path, form)
-            }))
-            .route("/:slug/delete/:id", post({
-                let panel = shared_panel.clone();
-                move |headers, path| resource_delete(panel, headers, path)
-            }))
-            .route("/:slug/export", get({
-                let panel = shared_panel.clone();
-                move |headers, path, query| resource_export(panel, headers, path, query)
-            }))
-            .route("/:slug/action/:action_id/:id", post({
-                let panel = shared_panel.clone();
-                move |headers, path| resource_action(panel, headers, path)
-            }))
-            .route("/:slug/bulk-action/:action_id", post({
-                let panel = shared_panel.clone();
-                move |headers, path, form| resource_bulk_action(panel, headers, path, form)
-            }));
+            .route(
+                "/",
+                get({
+                    let panel = shared_panel.clone();
+                    move |headers| root_redirect(panel, headers)
+                }),
+            )
+            .route(
+                "/dashboard",
+                get({
+                    let panel = shared_panel.clone();
+                    move |headers| dashboard_page(panel, headers)
+                }),
+            )
+            .route(
+                "/:slug",
+                get({
+                    let panel = shared_panel.clone();
+                    move |headers, path, query| resource_page(panel, headers, path, query)
+                }),
+            )
+            .route(
+                "/:slug/table",
+                get({
+                    let panel = shared_panel.clone();
+                    move |headers, path, query| resource_table_partial(panel, headers, path, query)
+                }),
+            )
+            .route(
+                "/:slug/api",
+                get({
+                    let panel = shared_panel.clone();
+                    move |headers, path, query| resource_json_api(panel, headers, path, query)
+                }),
+            )
+            .route(
+                "/:slug/create",
+                get({
+                    let panel = shared_panel.clone();
+                    move |headers, path| resource_create_page(panel, headers, path)
+                })
+                .post({
+                    let panel = shared_panel.clone();
+                    move |headers, path, form| resource_create(panel, headers, path, form)
+                }),
+            )
+            .route(
+                "/:slug/edit/:id",
+                get({
+                    let panel = shared_panel.clone();
+                    move |headers, path| resource_edit_page(panel, headers, path)
+                })
+                .post({
+                    let panel = shared_panel.clone();
+                    move |headers, path, form| resource_update(panel, headers, path, form)
+                }),
+            )
+            .route(
+                "/:slug/delete/:id",
+                post({
+                    let panel = shared_panel.clone();
+                    move |headers, path| resource_delete(panel, headers, path)
+                }),
+            )
+            .route(
+                "/:slug/export",
+                get({
+                    let panel = shared_panel.clone();
+                    move |headers, path, query| resource_export(panel, headers, path, query)
+                }),
+            )
+            .route(
+                "/:slug/action/:action_id/:id",
+                post({
+                    let panel = shared_panel.clone();
+                    move |headers, path| resource_action(panel, headers, path)
+                }),
+            )
+            .route(
+                "/:slug/bulk-action/:action_id",
+                post({
+                    let panel = shared_panel.clone();
+                    move |headers, path, form| resource_bulk_action(panel, headers, path, form)
+                }),
+            );
 
         for m in &shared_panel.modules {
             let slug = m.slug();
@@ -284,7 +327,10 @@ impl AdminPanel {
             router = router.layer(axum::Extension(store.clone()));
         }
 
-        let guarded = router.layer(axum::middleware::from_fn_with_state(shared_panel, admin_guard));
+        let guarded = router.layer(axum::middleware::from_fn_with_state(
+            shared_panel,
+            admin_guard,
+        ));
         crate::app::App::new().cors(false).merge(guarded).build()
     }
 }
@@ -307,7 +353,11 @@ fn active_user(panel: &AdminPanel, user: User) -> Option<User> {
 }
 
 fn bearer_user(panel: &AdminPanel, headers: &HeaderMap) -> Option<User> {
-    let bearer = headers.get(AUTHORIZATION)?.to_str().ok()?.strip_prefix("Bearer ")?;
+    let bearer = headers
+        .get(AUTHORIZATION)?
+        .to_str()
+        .ok()?
+        .strip_prefix("Bearer ")?;
     let store = panel.token_store.as_ref()?;
     let token = store.find_token(bearer.trim())?;
     let user = panel.user_repo.as_ref()?.find_by_id(&token.tokenable_id)?;
@@ -331,30 +381,67 @@ async fn admin_guard(
     next: axum::middleware::Next,
 ) -> Response {
     let is_login = request.uri().path() == "/login";
-    let user = if is_login { None } else { get_authenticated_user(&panel, request.headers()) };
+    let user = if is_login {
+        None
+    } else {
+        get_authenticated_user(&panel, request.headers())
+    };
     if !is_login && user.is_none() {
-        if request.headers().contains_key(AUTHORIZATION) || !matches!(*request.method(), axum::http::Method::GET | axum::http::Method::HEAD) {
+        if request.headers().contains_key(AUTHORIZATION)
+            || !matches!(
+                *request.method(),
+                axum::http::Method::GET | axum::http::Method::HEAD
+            )
+        {
             return (StatusCode::UNAUTHORIZED, "Authentication required").into_response();
         }
         return Redirect::to("/admin/login").into_response();
     }
     let mut request = request;
-    let unsafe_method = !matches!(*request.method(), axum::http::Method::GET | axum::http::Method::HEAD | axum::http::Method::OPTIONS);
-    let bearer_authenticated = !is_login && request.headers().contains_key(AUTHORIZATION) && user.is_some();
+    let unsafe_method = !matches!(
+        *request.method(),
+        axum::http::Method::GET | axum::http::Method::HEAD | axum::http::Method::OPTIONS
+    );
+    let bearer_authenticated =
+        !is_login && request.headers().contains_key(AUTHORIZATION) && user.is_some();
     if unsafe_method && !bearer_authenticated {
-        let header_token = request.headers().get("x-csrf-token").and_then(|value| value.to_str().ok()).map(str::to_string);
+        let header_token = request
+            .headers()
+            .get("x-csrf-token")
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string);
         let (parts, body) = request.into_parts();
         let bytes = match axum::body::to_bytes(body, 2 * 1024 * 1024).await {
             Ok(bytes) => bytes,
-            Err(_) => return (StatusCode::PAYLOAD_TOO_LARGE, "Request body exceeds the limit").into_response(),
+            Err(_) => {
+                return (
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    "Request body exceeds the limit",
+                )
+                    .into_response()
+            }
         };
-        let form_token = if header_token.is_none() && parts.headers.get(CONTENT_TYPE)
-            .and_then(|value| value.to_str().ok())
-            .is_some_and(|value| value.split(';').next().unwrap_or("").trim() == "application/x-www-form-urlencoded") {
-            serde_urlencoded::from_bytes::<HashMap<String, String>>(&bytes).ok()
-                .and_then(|mut values| values.remove("_csrf_token").or_else(|| values.remove("csrf_token")))
-        } else { None };
-        let valid = header_token.or(form_token)
+        let form_token = if header_token.is_none()
+            && parts
+                .headers
+                .get(CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok())
+                .is_some_and(|value| {
+                    value.split(';').next().unwrap_or("").trim()
+                        == "application/x-www-form-urlencoded"
+                }) {
+            serde_urlencoded::from_bytes::<HashMap<String, String>>(&bytes)
+                .ok()
+                .and_then(|mut values| {
+                    values
+                        .remove("_csrf_token")
+                        .or_else(|| values.remove("csrf_token"))
+                })
+        } else {
+            None
+        };
+        let valid = header_token
+            .or(form_token)
             .is_some_and(|token| crate::helpers::session().verify_csrf_token(&token));
         if !valid {
             return (StatusCode::FORBIDDEN, "Invalid CSRF token").into_response();
@@ -372,28 +459,55 @@ async fn login_submit(panel: Arc<AdminPanel>, Form(form): Form<LoginForm>) -> Re
     let email = form.email.unwrap_or_default().trim().to_string();
     let password = form.password.unwrap_or_default();
     if email.is_empty() || password.is_empty() {
-        return (StatusCode::UNAUTHORIZED, Html(auth::render_login_page(Some("Invalid email or password.")))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Html(auth::render_login_page(Some("Invalid email or password."))),
+        )
+            .into_response();
     }
     let Some(verifier) = panel.credential_verifier.clone() else {
-        return (StatusCode::UNAUTHORIZED, Html(auth::render_login_page(Some("Sign-in is not configured.")))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Html(auth::render_login_page(Some("Sign-in is not configured."))),
+        )
+            .into_response();
     };
     let user = match tokio::task::spawn_blocking(move || verifier(&email, &password)).await {
         Ok(Some(user)) => active_user(&panel, user),
         Ok(None) => None,
-        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Unable to verify credentials").into_response(),
+        Err(_) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Unable to verify credentials",
+            )
+                .into_response()
+        }
     };
     let Some(user) = user else {
-        return (StatusCode::UNAUTHORIZED, Html(auth::render_login_page(Some("Invalid email or password.")))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Html(auth::render_login_page(Some("Invalid email or password."))),
+        )
+            .into_response();
     };
     let previous = crate::helpers::session();
     previous.invalidate();
-    if crate::helpers::session_store().remove(previous.id()).is_err() {
-        return (StatusCode::INTERNAL_SERVER_ERROR, "Unable to rotate session").into_response();
+    if crate::helpers::session_store()
+        .remove(previous.id())
+        .is_err()
+    {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Unable to rotate session",
+        )
+            .into_response();
     }
     let session = crate::session::Session::new();
     let serialized = match serde_json::to_string(&user) {
         Ok(serialized) => serialized,
-        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Unable to start session").into_response(),
+        Err(_) => {
+            return (StatusCode::INTERNAL_SERVER_ERROR, "Unable to start session").into_response()
+        }
     };
     session.set(AUTH_USER_KEY, serialized);
     crate::helpers::set_current_session(Some(session.clone()));
@@ -408,8 +522,15 @@ async fn login_submit(panel: Arc<AdminPanel>, Form(form): Form<LoginForm>) -> Re
 async fn logout_handler() -> Response {
     let session = crate::helpers::session();
     session.invalidate();
-    if crate::helpers::session_store().remove(session.id()).is_err() {
-        return (StatusCode::INTERNAL_SERVER_ERROR, "Unable to revoke session").into_response();
+    if crate::helpers::session_store()
+        .remove(session.id())
+        .is_err()
+    {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Unable to revoke session",
+        )
+            .into_response();
     }
     crate::helpers::set_current_user(None);
     let expired = crate::helpers::clear_session_cookie_header();
@@ -509,7 +630,11 @@ async fn resource_create_page(
     };
 
     let Some(res) = panel.resource_map.get(&slug) else {
-        return (StatusCode::NOT_FOUND, Html("<h1>404 Resource Not Found</h1>")).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Html("<h1>404 Resource Not Found</h1>"),
+        )
+            .into_response();
     };
 
     if !res.can_create(&user) {
@@ -553,7 +678,11 @@ async fn resource_edit_page(
     };
 
     let Some(res) = panel.resource_map.get(&slug) else {
-        return (StatusCode::NOT_FOUND, Html("<h1>404 Resource Not Found</h1>")).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Html("<h1>404 Resource Not Found</h1>"),
+        )
+            .into_response();
     };
 
     if !res.can_edit(&user) {
@@ -590,7 +719,8 @@ async fn resource_edit_page(
     }
     let values_map = row_data.map(|r| r.values);
 
-    let form_page_content = form_page::render_form_page(res.as_ref(), Some(&id), values_map.as_ref());
+    let form_page_content =
+        form_page::render_form_page(res.as_ref(), Some(&id), values_map.as_ref());
     let title = format!("Edit {} #{}", res.name(), id);
     let full_html = layout::render_page(
         &title,
@@ -617,7 +747,11 @@ async fn resource_page(
     };
 
     let Some(res) = panel.resource_map.get(&slug) else {
-        return (StatusCode::NOT_FOUND, Html("<h1>404 Resource Not Found</h1>")).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Html("<h1>404 Resource Not Found</h1>"),
+        )
+            .into_response();
     };
 
     if !res.can_view(&user) {
@@ -667,11 +801,19 @@ async fn resource_table_partial(
     };
 
     let Some(res) = panel.resource_map.get(&slug) else {
-        return (StatusCode::NOT_FOUND, Html("<h1>404 Resource Not Found</h1>")).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Html("<h1>404 Resource Not Found</h1>"),
+        )
+            .into_response();
     };
 
     if !res.can_view(&user) {
-        return (StatusCode::FORBIDDEN, Html(layout::render_forbidden_page(&user, res.name()))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Html(layout::render_forbidden_page(&user, res.name())),
+        )
+            .into_response();
     }
 
     let query_state = parse_query(query_params);
@@ -692,11 +834,19 @@ async fn resource_create(
     };
 
     let Some(res) = panel.resource_map.get(&slug) else {
-        return (StatusCode::NOT_FOUND, Html("<h1>404 Resource Not Found</h1>")).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Html("<h1>404 Resource Not Found</h1>"),
+        )
+            .into_response();
     };
 
     if !res.can_create(&user) {
-        return (StatusCode::FORBIDDEN, Html(layout::render_forbidden_page(&user, res.name()))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Html(layout::render_forbidden_page(&user, res.name())),
+        )
+            .into_response();
     }
 
     values.remove("_csrf_token");
@@ -715,13 +865,20 @@ async fn resource_create(
                     timestamp: now,
                 });
             }
-            panel.broadcast("admin", "record:created", serde_json::json!({ "slug": &slug, "id": &new_id }));
+            panel.broadcast(
+                "admin",
+                "record:created",
+                serde_json::json!({ "slug": &slug, "id": &new_id }),
+            );
             panel.broadcast(&slug, "created", serde_json::json!({ "id": &new_id }));
-            Redirect::to(&format!("/admin/{slug}?flash=Record+created+successfully")).into_response()
+            Redirect::to(&format!("/admin/{slug}?flash=Record+created+successfully"))
+                .into_response()
         }
-        Err(err) => {
-            Redirect::to(&format!("/admin/{slug}?flash=Error:+{}", err.replace(' ', "+"))).into_response()
-        }
+        Err(err) => Redirect::to(&format!(
+            "/admin/{slug}?flash=Error:+{}",
+            err.replace(' ', "+")
+        ))
+        .into_response(),
     }
 }
 
@@ -737,16 +894,28 @@ async fn resource_update(
     };
 
     let Some(res) = panel.resource_map.get(&slug) else {
-        return (StatusCode::NOT_FOUND, Html("<h1>404 Resource Not Found</h1>")).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Html("<h1>404 Resource Not Found</h1>"),
+        )
+            .into_response();
     };
 
     if !res.can_edit(&user) {
-        return (StatusCode::FORBIDDEN, Html(layout::render_forbidden_page(&user, res.name()))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Html(layout::render_forbidden_page(&user, res.name())),
+        )
+            .into_response();
     }
 
     if let Some(existing_row) = res.get_row(&id) {
         if !res.can_edit_row(&user, &existing_row) {
-            return (StatusCode::FORBIDDEN, Html(layout::render_forbidden_page(&user, res.name()))).into_response();
+            return (
+                StatusCode::FORBIDDEN,
+                Html(layout::render_forbidden_page(&user, res.name())),
+            )
+                .into_response();
         }
     }
 
@@ -766,13 +935,20 @@ async fn resource_update(
                     timestamp: now,
                 });
             }
-            panel.broadcast("admin", "record:updated", serde_json::json!({ "slug": &slug, "id": &id }));
+            panel.broadcast(
+                "admin",
+                "record:updated",
+                serde_json::json!({ "slug": &slug, "id": &id }),
+            );
             panel.broadcast(&slug, "updated", serde_json::json!({ "id": &id }));
-            Redirect::to(&format!("/admin/{slug}?flash=Record+updated+successfully")).into_response()
+            Redirect::to(&format!("/admin/{slug}?flash=Record+updated+successfully"))
+                .into_response()
         }
-        Err(err) => {
-            Redirect::to(&format!("/admin/{slug}?flash=Error:+{}", err.replace(' ', "+"))).into_response()
-        }
+        Err(err) => Redirect::to(&format!(
+            "/admin/{slug}?flash=Error:+{}",
+            err.replace(' ', "+")
+        ))
+        .into_response(),
     }
 }
 
@@ -787,16 +963,28 @@ async fn resource_delete(
     };
 
     let Some(res) = panel.resource_map.get(&slug) else {
-        return (StatusCode::NOT_FOUND, Html("<h1>404 Resource Not Found</h1>")).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Html("<h1>404 Resource Not Found</h1>"),
+        )
+            .into_response();
     };
 
     if !res.can_delete(&user) {
-        return (StatusCode::FORBIDDEN, Html(layout::render_forbidden_page(&user, res.name()))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Html(layout::render_forbidden_page(&user, res.name())),
+        )
+            .into_response();
     }
 
     if let Some(existing_row) = res.get_row(&id) {
         if !res.can_delete_row(&user, &existing_row) {
-            return (StatusCode::FORBIDDEN, Html(layout::render_forbidden_page(&user, res.name()))).into_response();
+            return (
+                StatusCode::FORBIDDEN,
+                Html(layout::render_forbidden_page(&user, res.name())),
+            )
+                .into_response();
         }
     }
 
@@ -814,13 +1002,20 @@ async fn resource_delete(
                     timestamp: now,
                 });
             }
-            panel.broadcast("admin", "record:deleted", serde_json::json!({ "slug": &slug, "id": &id }));
+            panel.broadcast(
+                "admin",
+                "record:deleted",
+                serde_json::json!({ "slug": &slug, "id": &id }),
+            );
             panel.broadcast(&slug, "deleted", serde_json::json!({ "id": &id }));
-            Redirect::to(&format!("/admin/{slug}?flash=Record+deleted+successfully")).into_response()
+            Redirect::to(&format!("/admin/{slug}?flash=Record+deleted+successfully"))
+                .into_response()
         }
-        Err(err) => {
-            Redirect::to(&format!("/admin/{slug}?flash=Error:+{}", err.replace(' ', "+"))).into_response()
-        }
+        Err(err) => Redirect::to(&format!(
+            "/admin/{slug}?flash=Error:+{}",
+            err.replace(' ', "+")
+        ))
+        .into_response(),
     }
 }
 
@@ -836,15 +1031,29 @@ async fn resource_export(
     };
 
     let Some(res) = panel.resource_map.get(&slug) else {
-        return (StatusCode::NOT_FOUND, Html("<h1>404 Resource Not Found</h1>")).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Html("<h1>404 Resource Not Found</h1>"),
+        )
+            .into_response();
     };
 
     if !res.can_view(&user) {
-        return (StatusCode::FORBIDDEN, Html(layout::render_forbidden_page(&user, res.name()))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Html(layout::render_forbidden_page(&user, res.name())),
+        )
+            .into_response();
     }
 
-    let id_list: Vec<String> = query.ids
-        .map(|s| s.split(',').map(|id| id.trim().to_string()).filter(|id| !id.is_empty()).collect())
+    let id_list: Vec<String> = query
+        .ids
+        .map(|s| {
+            s.split(',')
+                .map(|id| id.trim().to_string())
+                .filter(|id| !id.is_empty())
+                .collect()
+        })
         .unwrap_or_default();
 
     let fmt = query.format.unwrap_or_else(|| "csv".to_string());
@@ -888,11 +1097,19 @@ async fn resource_action(
     };
 
     let Some(res) = panel.resource_map.get(&slug) else {
-        return (StatusCode::NOT_FOUND, Html("<h1>404 Resource Not Found</h1>")).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Html("<h1>404 Resource Not Found</h1>"),
+        )
+            .into_response();
     };
 
     if !res.can_edit(&user) {
-        return (StatusCode::FORBIDDEN, Html(layout::render_forbidden_page(&user, res.name()))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Html(layout::render_forbidden_page(&user, res.name())),
+        )
+            .into_response();
     }
 
     match res.handle_action(&action_id, &id) {
@@ -902,13 +1119,22 @@ async fn resource_action(
                 "record:action",
                 serde_json::json!({ "slug": &slug, "id": &id, "action": &action_id }),
             );
-            panel.broadcast(&slug, "action", serde_json::json!({ "id": &id, "action": &action_id }));
+            panel.broadcast(
+                &slug,
+                "action",
+                serde_json::json!({ "id": &id, "action": &action_id }),
+            );
             let flash = if msg.is_empty() {
                 format!("Action `{}` completed", action_id)
             } else {
                 msg
             };
-            Redirect::to(&format!("/admin/{}?flash={}", slug, flash.replace(' ', "+"))).into_response()
+            Redirect::to(&format!(
+                "/admin/{}?flash={}",
+                slug,
+                flash.replace(' ', "+")
+            ))
+            .into_response()
         }
         Err(err) => Redirect::to(&format!(
             "/admin/{}?flash=Error:+{}",
@@ -931,15 +1157,29 @@ async fn resource_bulk_action(
     };
 
     let Some(res) = panel.resource_map.get(&slug) else {
-        return (StatusCode::NOT_FOUND, Html("<h1>404 Resource Not Found</h1>")).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Html("<h1>404 Resource Not Found</h1>"),
+        )
+            .into_response();
     };
 
     if !res.can_edit(&user) {
-        return (StatusCode::FORBIDDEN, Html(layout::render_forbidden_page(&user, res.name()))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Html(layout::render_forbidden_page(&user, res.name())),
+        )
+            .into_response();
     }
 
-    let id_list: Vec<String> = form.ids
-        .map(|s| s.split(',').map(|id| id.trim().to_string()).filter(|id| !id.is_empty()).collect())
+    let id_list: Vec<String> = form
+        .ids
+        .map(|s| {
+            s.split(',')
+                .map(|id| id.trim().to_string())
+                .filter(|id| !id.is_empty())
+                .collect()
+        })
         .unwrap_or_default();
 
     match res.handle_bulk_action(&action_id, &id_list) {
@@ -949,8 +1189,13 @@ async fn resource_bulk_action(
                 "record:bulk_action",
                 serde_json::json!({ "slug": &slug, "action": &action_id, "count": id_list.len() }),
             );
-            panel.broadcast(&slug, "bulk_action", serde_json::json!({ "action": &action_id, "count": id_list.len() }));
-            Redirect::to(&format!("/admin/{}?flash={}", slug, msg.replace(' ', "+"))).into_response()
+            panel.broadcast(
+                &slug,
+                "bulk_action",
+                serde_json::json!({ "action": &action_id, "count": id_list.len() }),
+            );
+            Redirect::to(&format!("/admin/{}?flash={}", slug, msg.replace(' ', "+")))
+                .into_response()
         }
         Err(err) => Redirect::to(&format!(
             "/admin/{}?flash=Error:+{}",
@@ -969,38 +1214,59 @@ async fn resource_json_api(
 ) -> Response {
     let user = match get_authenticated_user(&panel, &headers) {
         Some(u) => u,
-        None => return (StatusCode::UNAUTHORIZED, axum::Json(serde_json::json!({ "error": "Unauthorized" }))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                axum::Json(serde_json::json!({ "error": "Unauthorized" })),
+            )
+                .into_response()
+        }
     };
 
     let Some(res) = panel.resource_map.get(&slug) else {
-        return (StatusCode::NOT_FOUND, axum::Json(serde_json::json!({ "error": "Not Found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            axum::Json(serde_json::json!({ "error": "Not Found" })),
+        )
+            .into_response();
     };
 
     if !res.can_view(&user) {
-        return (StatusCode::FORBIDDEN, axum::Json(serde_json::json!({ "error": "Forbidden" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            axum::Json(serde_json::json!({ "error": "Forbidden" })),
+        )
+            .into_response();
     }
 
     let query_state = parse_query(query_params);
     let (rows, total) = res.fetch_rows(&query_state);
 
-    let json_rows: Vec<serde_json::Value> = rows.into_iter().map(|r| {
-        let mut map = serde_json::Map::new();
-        map.insert("id".to_string(), serde_json::Value::String(r.id));
-        for (k, v) in r.values {
-            let camel_k = crate::resource::to_camel_case(&k);
-            map.insert(camel_k, serde_json::Value::String(v));
-        }
-        serde_json::Value::Object(map)
-    }).collect();
+    let json_rows: Vec<serde_json::Value> = rows
+        .into_iter()
+        .map(|r| {
+            let mut map = serde_json::Map::new();
+            map.insert("id".to_string(), serde_json::Value::String(r.id));
+            for (k, v) in r.values {
+                let camel_k = crate::resource::to_camel_case(&k);
+                map.insert(camel_k, serde_json::Value::String(v));
+            }
+            serde_json::Value::Object(map)
+        })
+        .collect();
 
-    (StatusCode::OK, axum::Json(serde_json::json!({
-        "data": json_rows,
-        "total": total,
-        "page": query_state.page,
-        "perPage": query_state.per_page,
-        "sortBy": query_state.sort_by,
-        "sortDesc": query_state.sort_desc,
-    }))).into_response()
+    (
+        StatusCode::OK,
+        axum::Json(serde_json::json!({
+            "data": json_rows,
+            "total": total,
+            "page": query_state.page,
+            "perPage": query_state.per_page,
+            "sortBy": query_state.sort_by,
+            "sortDesc": query_state.sort_desc,
+        })),
+    )
+        .into_response()
 }
 
 fn parse_query(q: TableQuery) -> QueryState {
@@ -1011,20 +1277,38 @@ fn parse_query(q: TableQuery) -> QueryState {
                 filters.insert(filter_name.to_string(), v);
             }
         } else if let Some(rest) = k.strip_prefix("filter") {
-            if !rest.is_empty() && rest.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+            if !rest.is_empty()
+                && rest
+                    .chars()
+                    .next()
+                    .map(|c| c.is_uppercase())
+                    .unwrap_or(false)
+            {
                 let name = rest.to_lowercase();
                 if !v.is_empty() {
                     filters.insert(name, v);
                 }
             }
-        } else if !k.is_empty() && k != "page" && k != "search" && k != "sort_by" && k != "sortBy" && k != "sort_desc" && k != "sortDesc" && k != "flash"
-            && !v.is_empty() {
-                filters.insert(k, v);
-            }
+        } else if !k.is_empty()
+            && k != "page"
+            && k != "search"
+            && k != "sort_by"
+            && k != "sortBy"
+            && k != "sort_desc"
+            && k != "sortDesc"
+            && k != "flash"
+            && !v.is_empty()
+        {
+            filters.insert(k, v);
+        }
     }
 
     let sort_col = q.sort_by_camel.or(q.sort_by).filter(|s| !s.is_empty());
-    let sort_desc_val = q.sort_desc_camel.or(q.sort_desc).map(|v| v == "true").unwrap_or(false);
+    let sort_desc_val = q
+        .sort_desc_camel
+        .or(q.sort_desc)
+        .map(|v| v == "true")
+        .unwrap_or(false);
 
     QueryState {
         page: q.page.unwrap_or(1),
