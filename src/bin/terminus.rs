@@ -2125,10 +2125,86 @@ fn inspect_tables() {
 }
 
 fn clear_cache() {
-    let cache = terminus::cache::MemoryCache::new();
-    cache.flush();
-    println!("\x1b[32m[OK] Application Cache cleared successfully!\x1b[0m");
-    println!("Flushed: MemoryCache & Redis Key-Value Driver");
+    let mut flushed: Vec<String> = Vec::new();
+
+    // 1. Persistent database cache (_terminus_cache table via SqliteCache / Database)
+    match cli_database() {
+        Ok(db) => {
+            let config = terminus::orm::DatabaseConfig::from_env().unwrap_or_else(|_| {
+                terminus::orm::DatabaseConfig {
+                    database: "terminus.db".to_string(),
+                }
+            });
+            let label = match config.kind() {
+                terminus::backend::DatabaseKind::Postgres => {
+                    format!("PostgreSQL Cache (_terminus_cache @ {})", config.database)
+                }
+                terminus::backend::DatabaseKind::Mysql => {
+                    format!("MySQL Cache (_terminus_cache @ {})", config.database)
+                }
+                terminus::backend::DatabaseKind::Sqlite => {
+                    let path = if config.database.is_empty() {
+                        "terminus.db"
+                    } else {
+                        &config.database
+                    };
+                    format!("SQLite Cache (_terminus_cache in {path})")
+                }
+            };
+
+            match config.kind() {
+                terminus::backend::DatabaseKind::Sqlite => {
+                    match terminus::cache::SqliteCache::from_arc(db.connection_arc()) {
+                        Ok(cache) => {
+                            cache.flush();
+                            flushed.push(label);
+                        }
+                        Err(err) => {
+                            eprintln!("[WARN] Failed to access SQLite cache: {err}");
+                        }
+                    }
+                }
+                terminus::backend::DatabaseKind::Postgres
+                | terminus::backend::DatabaseKind::Mysql => {
+                    if db
+                        .execute_params("DELETE FROM _terminus_cache", &[])
+                        .is_ok()
+                    {
+                        flushed.push(label);
+                    }
+                }
+            }
+        }
+        Err(err) => {
+            eprintln!("[WARN] Could not connect to database for cache clearing: {err}");
+        }
+    }
+
+    // 2. Redis cache (when REDIS_URL is configured)
+    #[cfg(feature = "redis")]
+    {
+        if let Ok(redis_url) = std::env::var("REDIS_URL") {
+            let redis_url = redis_url.trim();
+            if !redis_url.is_empty() {
+                match terminus::cache::RedisCache::new(redis_url) {
+                    Ok(redis_cache) => {
+                        redis_cache.flush();
+                        flushed.push(format!("RedisCache ({redis_url})"));
+                    }
+                    Err(err) => {
+                        eprintln!("[WARN] Failed to connect to Redis at {redis_url}: {err}");
+                    }
+                }
+            }
+        }
+    }
+
+    if flushed.is_empty() {
+        println!("\x1b[33m[WARN] No persistent cache stores were configured or cleared.\x1b[0m");
+    } else {
+        println!("\x1b[32m[OK] Application Cache cleared successfully!\x1b[0m");
+        println!("Flushed: {}", flushed.join(", "));
+    }
 }
 
 fn make_job(name_opt: Option<&str>) {
