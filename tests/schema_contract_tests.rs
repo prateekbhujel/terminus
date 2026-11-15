@@ -372,7 +372,7 @@ fn runnable_quickstart_exports_spec_manifest_for_terminus_schema() {
     );
 }
 
-#[cfg(any(feature = "postgres", feature = "mysql"))]
+#[cfg(any(feature = "postgres", feature = "mysql", feature = "redis"))]
 fn external_test_url(var: &str, service: &str) -> Option<String> {
     if let Ok(url) = std::env::var(var) {
         let trimmed = url.trim().to_string();
