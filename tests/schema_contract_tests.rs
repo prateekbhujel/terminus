@@ -372,7 +372,7 @@ fn runnable_quickstart_exports_spec_manifest_for_terminus_schema() {
     );
 }
 
-#[cfg(any(feature = "postgres", feature = "mysql"))]
+#[cfg(any(feature = "postgres", feature = "mysql", feature = "redis"))]
 fn external_test_url(var: &str, service: &str) -> Option<String> {
     if let Ok(url) = std::env::var(var) {
         let trimmed = url.trim().to_string();
@@ -463,6 +463,82 @@ fn cli_schema_respects_database_url_for_postgres_and_mysql_when_configured() {
             .expect("MySQL table observed");
         for field in tbl["fields"].as_array().unwrap() {
             assert!(field["rust_type"].is_null());
+        }
+    }
+}
+
+#[test]
+fn cli_cache_clear_flushes_persistent_sqlite_and_redis_stores() {
+    let dir = TempWorkspace::new();
+    let custom_db_path = dir.path().join("custom_app.db");
+
+    // 1. Seed persistent SQLite cache table
+    {
+        let cache = terminus::cache::SqliteCache::new(custom_db_path.to_str().unwrap()).unwrap();
+        cache.put("user_session_42", "{\"role\":\"admin\"}", Some(3600));
+        assert_eq!(
+            cache.get("user_session_42"),
+            Some("{\"role\":\"admin\"}".to_string())
+        );
+    }
+
+    // 2. Invoke `terminus cache:clear` with explicit DATABASE_URL pointing to custom_app.db
+    let db_url = format!("sqlite://{}", custom_db_path.display());
+    let out = dir.run_cli(&["cache:clear"], &[("DATABASE_URL", &db_url)]);
+    assert!(out.status.success(), "cache:clear must exit successfully");
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("[OK] Application Cache cleared successfully!"),
+        "stdout was: {stdout}"
+    );
+    assert!(
+        stdout.contains("SQLite Cache (_terminus_cache in"),
+        "stdout was: {stdout}"
+    );
+    assert!(
+        stdout.contains("custom_app.db"),
+        "stdout should report the configured SQLite database file: {stdout}"
+    );
+    assert!(
+        !stdout.contains("MemoryCache"),
+        "stdout must not report an ephemeral in-process MemoryCache"
+    );
+    assert!(
+        !stdout.contains("Redis"),
+        "stdout must not report Redis when REDIS_URL is unset"
+    );
+
+    // 3. Verify SQLite _terminus_cache is now completely empty
+    {
+        let conn = rusqlite::Connection::open(&custom_db_path).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM _terminus_cache", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 0, "All persistent cache entries should be deleted");
+    }
+
+    // 4. Redis test when configured via external environment variable
+    #[cfg(feature = "redis")]
+    if let Some(redis_url) = external_test_url("TERMINUS_TEST_REDIS_URL", "redis") {
+        if let Ok(redis_cache) = terminus::cache::RedisCache::new(&redis_url) {
+            redis_cache.put("test_redis_probe_key", "active", Some(60));
+            assert_eq!(
+                redis_cache.get("test_redis_probe_key"),
+                Some("active".to_string())
+            );
+
+            let out_redis = dir.run_cli(
+                &["cache:clear"],
+                &[("REDIS_URL", &redis_url), ("DATABASE_URL", &db_url)],
+            );
+            assert!(out_redis.status.success());
+            let redis_stdout = String::from_utf8_lossy(&out_redis.stdout);
+            assert!(
+                redis_stdout.contains("RedisCache (redis://"),
+                "stdout was: {redis_stdout}"
+            );
+            assert_eq!(redis_cache.get("test_redis_probe_key"), None);
         }
     }
 }

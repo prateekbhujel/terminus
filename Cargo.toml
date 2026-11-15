@@ -23,7 +23,6 @@ serde_json = "1.0"
 tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.6", features = ["fs", "trace", "cors"] }
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 chrono = { version = "0.4.45", features = ["clock"] }
 argon2 = { version = "0.6", features = ["getrandom"] }
