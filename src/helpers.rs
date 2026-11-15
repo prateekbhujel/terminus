@@ -196,6 +196,16 @@ impl RequestInfo {
     }
 
     pub fn from_headers(method: &str, path: &str, headers: &axum::http::HeaderMap) -> Self {
+        Self::from_headers_with_peer(method, path, headers, None, &[])
+    }
+
+    pub fn from_headers_with_peer(
+        method: &str,
+        path: &str,
+        headers: &axum::http::HeaderMap,
+        peer_ip: Option<std::net::IpAddr>,
+        trusted_proxies: &[std::net::IpAddr],
+    ) -> Self {
         let mut req = Self::new(method, path);
         for (k, v) in headers {
             if let Ok(val) = v.to_str() {
@@ -203,12 +213,7 @@ impl RequestInfo {
                     .insert(k.as_str().to_lowercase(), val.to_string());
             }
         }
-        if let Some(ip) = req
-            .header("x-forwarded-for")
-            .or_else(|| req.header("x-real-ip"))
-        {
-            req.ip = ip.to_string();
-        }
+        req.ip = resolve_client_ip(peer_ip, headers, trusted_proxies);
         req
     }
 
@@ -260,6 +265,69 @@ impl RequestInfo {
             .map(|h| h.eq_ignore_ascii_case("xmlhttprequest"))
             .unwrap_or(false)
     }
+}
+
+/// Normalizes IPv4-mapped IPv6 addresses to standard IPv4.
+pub fn canonical_ip(ip: std::net::IpAddr) -> std::net::IpAddr {
+    match ip {
+        std::net::IpAddr::V6(v6) => v6.to_ipv4_mapped().map(std::net::IpAddr::V4).unwrap_or(ip),
+        std::net::IpAddr::V4(_) => ip,
+    }
+}
+
+/// Resolves client identity from socket peer and trusted forwarding headers.
+///
+/// If `peer_ip` is missing (e.g. in-process mock requests), defaults to loopback.
+/// If `peer_ip` is not in `trusted_proxies`, client-supplied forwarding headers
+/// (`X-Forwarded-For` and `X-Real-IP`) are strictly ignored.
+///
+/// When the direct peer is trusted, `X-Forwarded-For` is parsed from right to left,
+/// stopping at the first untrusted hop. If `X-Forwarded-For` is empty, `X-Real-IP`
+/// is consulted.
+pub fn resolve_client_ip(
+    peer_ip: Option<std::net::IpAddr>,
+    headers: &axum::http::HeaderMap,
+    trusted_proxies: &[std::net::IpAddr],
+) -> String {
+    let Some(peer) = peer_ip.map(canonical_ip) else {
+        return "127.0.0.1".to_string();
+    };
+
+    let trusted: Vec<std::net::IpAddr> =
+        trusted_proxies.iter().copied().map(canonical_ip).collect();
+    let mut client = peer;
+    if !trusted.contains(&client) {
+        return client.to_string();
+    }
+
+    let values: Vec<_> = headers.get_all("x-forwarded-for").iter().collect();
+    if values.is_empty() {
+        if let Some(real_ip) = headers.get("x-real-ip").and_then(|v| v.to_str().ok()) {
+            if let Ok(ip) = real_ip.trim().parse::<std::net::IpAddr>().map(canonical_ip) {
+                return ip.to_string();
+            }
+        }
+        return client.to_string();
+    }
+
+    for value in values.into_iter().rev() {
+        if !trusted.contains(&client) {
+            return client.to_string();
+        }
+        let Ok(value) = value.to_str() else {
+            return peer.to_string();
+        };
+        for hop in value.rsplit(',') {
+            if !trusted.contains(&client) {
+                return client.to_string();
+            }
+            let Ok(ip) = hop.trim().parse::<std::net::IpAddr>().map(canonical_ip) else {
+                return peer.to_string();
+            };
+            client = ip;
+        }
+    }
+    client.to_string()
 }
 
 /// Fluent accessor for the current HTTP request.
