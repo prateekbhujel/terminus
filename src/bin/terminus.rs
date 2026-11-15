@@ -1,7 +1,6 @@
 use std::env;
 use std::fs;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
 use terminus::cache::CacheDriver;
 use terminus::client::SdkGenerator;
 use terminus::prompt;
@@ -9,7 +8,7 @@ use terminus::scaffold::{
     parse_targets, scaffold_project, DatabaseChoice, FrontendChoice, ProjectConfig, ProjectPreset,
     TargetPlatform,
 };
-use terminus::token::{SqliteTokenStore, TokenRepository};
+use terminus::token::{DatabaseTokenStore, TokenRepository};
 
 fn main() {
     let mut raw_args: Vec<String> = env::args().collect();
@@ -126,13 +125,26 @@ fn main() {
             make_migration(name);
         }
         "make:token" | "token:create" => {
-            let name = args.get(2).map(|s| s.as_str());
-            make_token(name);
+            let name = args
+                .iter()
+                .skip(2)
+                .find(|a| !a.starts_with('-'))
+                .map(|s| s.as_str())
+                .or_else(|| args.iter().find_map(|a| a.strip_prefix("--name=")));
+            let abilities_arg = args.iter().find_map(|a| a.strip_prefix("--abilities="));
+            make_token(name, abilities_arg);
         }
         "token:list" => list_tokens(),
         "token:revoke" => {
-            let id = args.get(2).map(|s| s.as_str());
-            revoke_token(id);
+            let force = args
+                .iter()
+                .any(|a| a == "--yes" || a == "-y" || a == "--force");
+            let id = args
+                .iter()
+                .skip(2)
+                .find(|a| !a.starts_with('-'))
+                .map(|s| s.as_str());
+            revoke_token(id, force);
         }
         "migrate" => run_migrations(),
         "migrate:status" => run_migration_status(),
@@ -1580,23 +1592,84 @@ const CORE_MIGRATIONS: &[(&str, &str)] = &[
     ),
 ];
 
-/// Core framework tables per backend. Identifiers mirror the SQLite
-/// originals; only auto-increment syntax differs by dialect.
+/// Core framework tables per backend.
 fn core_migrations(kind: terminus::backend::DatabaseKind) -> Vec<(&'static str, String)> {
-    let id_column = match kind {
-        terminus::backend::DatabaseKind::Postgres => "id BIGSERIAL PRIMARY KEY",
-        terminus::backend::DatabaseKind::Mysql => "id BIGINT PRIMARY KEY AUTO_INCREMENT",
-        terminus::backend::DatabaseKind::Sqlite => "id INTEGER PRIMARY KEY AUTOINCREMENT",
-    };
-    CORE_MIGRATIONS
-        .iter()
-        .map(|(name, sql)| {
+    match kind {
+        terminus::backend::DatabaseKind::Mysql => vec![
             (
-                *name,
-                sql.replace("id INTEGER PRIMARY KEY AUTOINCREMENT", id_column),
-            )
-        })
-        .collect()
+                "00000000_000001_create_users_table",
+                r#"CREATE TABLE IF NOT EXISTS users (
+                id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                name VARCHAR(255) NOT NULL,
+                email VARCHAR(255) NOT NULL UNIQUE,
+                password_hash VARCHAR(255) NOT NULL DEFAULT '',
+                role VARCHAR(64) NOT NULL DEFAULT 'Member',
+                status VARCHAR(64) NOT NULL DEFAULT 'Active',
+                created_at VARCHAR(64) NOT NULL
+            );"#
+                .to_string(),
+            ),
+            (
+                "00000000_000002_create_personal_access_tokens_table",
+                r#"CREATE TABLE IF NOT EXISTS personal_access_tokens (
+                id VARCHAR(128) PRIMARY KEY,
+                tokenable_type VARCHAR(128) NOT NULL,
+                tokenable_id VARCHAR(128) NOT NULL,
+                name VARCHAR(255) NOT NULL,
+                token VARCHAR(255) NOT NULL UNIQUE,
+                abilities TEXT NOT NULL,
+                last_used_at VARCHAR(64),
+                expires_at VARCHAR(64),
+                created_at VARCHAR(64) NOT NULL
+            );"#
+                .to_string(),
+            ),
+            (
+                "00000000_000003_create_audit_logs_table",
+                r#"CREATE TABLE IF NOT EXISTS audit_logs (
+                id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                user_id VARCHAR(128),
+                user_email VARCHAR(255),
+                action VARCHAR(128) NOT NULL,
+                resource_type VARCHAR(128) NOT NULL,
+                resource_id VARCHAR(128),
+                ip_address VARCHAR(64),
+                user_agent TEXT,
+                payload TEXT,
+                created_at VARCHAR(64) NOT NULL
+            );"#
+                .to_string(),
+            ),
+            (
+                "00000000_000004_create_orders_table",
+                r#"CREATE TABLE IF NOT EXISTS orders (
+                id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                customer_name VARCHAR(255) NOT NULL,
+                total_cents INTEGER NOT NULL DEFAULT 0,
+                status VARCHAR(64) NOT NULL DEFAULT 'Pending',
+                notes TEXT,
+                created_at VARCHAR(64) NOT NULL
+            );"#
+                .to_string(),
+            ),
+        ],
+        terminus::backend::DatabaseKind::Postgres => {
+            let id_column = "id BIGSERIAL PRIMARY KEY";
+            CORE_MIGRATIONS
+                .iter()
+                .map(|(name, sql)| {
+                    (
+                        *name,
+                        sql.replace("id INTEGER PRIMARY KEY AUTOINCREMENT", id_column),
+                    )
+                })
+                .collect()
+        }
+        terminus::backend::DatabaseKind::Sqlite => CORE_MIGRATIONS
+            .iter()
+            .map(|(name, sql)| (*name, (*sql).to_string()))
+            .collect(),
+    }
 }
 
 /// Open the application database from DATABASE_URL (default terminus.db).
@@ -1789,23 +1862,36 @@ fn run_migration_rollback_checked() -> Result<(), String> {
 fn run_tinker(exec_opt: Option<&str>) {
     use std::io::{self, BufRead, Write};
 
-    println!(
-        "\x1b[1;36mTerminus Tinker REPL v{}\x1b[0m",
-        env!("CARGO_PKG_VERSION")
-    );
-    println!("Database: \x1b[33mterminus.db\x1b[0m (SQLite) | Type 'help' or 'exit'");
-
-    let db_path = "terminus.db";
-    let conn = match rusqlite::Connection::open(db_path) {
-        Ok(c) => c,
+    let db = match cli_database() {
+        Ok(db) => db,
         Err(e) => {
             eprintln!("\x1b[31m[ERROR] Failed to open database: {}\x1b[0m", e);
             return;
         }
     };
+    let config = terminus::orm::DatabaseConfig::from_env().unwrap_or_else(|_| {
+        terminus::orm::DatabaseConfig {
+            database: "terminus.db".to_string(),
+        }
+    });
+    let kind = config.kind();
+    let backend_name = match kind {
+        terminus::backend::DatabaseKind::Sqlite => "SQLite",
+        terminus::backend::DatabaseKind::Postgres => "PostgreSQL",
+        terminus::backend::DatabaseKind::Mysql => "MySQL",
+    };
+
+    println!(
+        "\x1b[1;36mTerminus Tinker REPL v{}\x1b[0m",
+        env!("CARGO_PKG_VERSION")
+    );
+    println!(
+        "Database: \x1b[33m{}\x1b[0m ({}) | Type 'help' or 'exit'",
+        config.database, backend_name
+    );
 
     if let Some(cmd) = exec_opt {
-        execute_tinker_command(&conn, cmd);
+        execute_tinker_command(&db, cmd);
         return;
     }
 
@@ -1831,13 +1917,13 @@ fn run_tinker(exec_opt: Option<&str>) {
             break;
         }
 
-        if execute_tinker_command(&conn, cmd) {
+        if execute_tinker_command(&db, cmd) {
             break;
         }
     }
 }
 
-fn execute_tinker_command(conn: &rusqlite::Connection, cmd: &str) -> bool {
+fn execute_tinker_command(db: &terminus::orm::Database, cmd: &str) -> bool {
     let lower = cmd.to_lowercase();
     if lower == "help" || lower == "?" {
         println!("Terminus Tinker Commands:");
@@ -1871,16 +1957,55 @@ fn execute_tinker_command(conn: &rusqlite::Connection, cmd: &str) -> bool {
             .trim_start_matches("schema ")
             .trim_start_matches(".schema ")
             .trim();
-        let sql: Option<String> = conn
-            .query_row(
-                "SELECT sql FROM sqlite_master WHERE type='table' AND name = ?1",
-                rusqlite::params![table],
-                |r| r.get(0),
-            )
-            .ok();
-        match sql {
-            Some(s) => println!("Schema for {}:\n{}", table, s),
-            None => println!("Table '{}' not found.", table),
+        match db.kind() {
+            terminus::backend::DatabaseKind::Sqlite => {
+                let sql: Option<String> = db
+                    .query_params(
+                        "SELECT sql FROM sqlite_master WHERE type='table' AND name = ?",
+                        &[table.to_string()],
+                    )
+                    .ok()
+                    .and_then(|rows| rows.into_iter().next())
+                    .and_then(|row| col_val(&row, "sql").to_string().into());
+                match sql {
+                    Some(s) if !s.is_empty() => println!("Schema for {table}:\n{s}"),
+                    _ => println!("Table '{table}' not found."),
+                }
+            }
+            terminus::backend::DatabaseKind::Postgres => {
+                let sql = "SELECT column_name, data_type, is_nullable FROM information_schema.columns WHERE table_name = $1 ORDER BY ordinal_position";
+                match db.query_params(sql, &[table.to_string()]) {
+                    Ok(rows) if !rows.is_empty() => {
+                        println!("Columns for {table}:");
+                        for r in rows {
+                            println!(
+                                "  {} {} (nullable: {})",
+                                col_val(&r, "column_name"),
+                                col_val(&r, "data_type"),
+                                col_val(&r, "is_nullable")
+                            );
+                        }
+                    }
+                    _ => println!("Table '{table}' not found."),
+                }
+            }
+            terminus::backend::DatabaseKind::Mysql => {
+                let sql = "SELECT column_name, data_type, is_nullable FROM information_schema.columns WHERE table_name = ? AND table_schema = DATABASE() ORDER BY ordinal_position";
+                match db.query_params(sql, &[table.to_string()]) {
+                    Ok(rows) if !rows.is_empty() => {
+                        println!("Columns for {table}:");
+                        for r in rows {
+                            println!(
+                                "  {} {} (nullable: {})",
+                                col_val(&r, "column_name"),
+                                col_val(&r, "data_type"),
+                                col_val(&r, "is_nullable")
+                            );
+                        }
+                    }
+                    _ => println!("Table '{table}' not found."),
+                }
+            }
         }
         return false;
     }
@@ -1892,50 +2017,36 @@ fn execute_tinker_command(conn: &rusqlite::Connection, cmd: &str) -> bool {
         return false;
     }
 
-    let is_query =
-        lower.starts_with("select") || lower.starts_with("explain") || lower.starts_with("pragma");
+    let is_query = lower.starts_with("select")
+        || lower.starts_with("explain")
+        || lower.starts_with("pragma")
+        || lower.starts_with("show")
+        || lower.starts_with("describe");
     if is_query {
-        match conn.prepare(cmd) {
-            Ok(mut stmt) => {
-                let col_count = stmt.column_count();
-                let col_names: Vec<String> =
-                    stmt.column_names().iter().map(|s| s.to_string()).collect();
-                println!("  {}", col_names.join(" | "));
-                println!("  {}", "-".repeat(col_names.join(" | ").len().max(20)));
+        match db.query_params(cmd, &[]) {
+            Ok(rows) => {
+                if rows.is_empty() {
+                    println!("(0 rows returned)\n");
+                } else {
+                    let mut col_names: Vec<String> = rows[0].keys().cloned().collect();
+                    col_names.sort();
+                    println!("  {}", col_names.join(" | "));
+                    println!("  {}", "-".repeat(col_names.join(" | ").len().max(20)));
 
-                let mut rows = match stmt.query([]) {
-                    Ok(r) => r,
-                    Err(e) => {
-                        eprintln!("\x1b[31mSQL Error:\x1b[0m {}", e);
-                        return false;
+                    for row in &rows {
+                        let vals: Vec<String> = col_names
+                            .iter()
+                            .map(|c| row.get(c).cloned().unwrap_or_else(|| "NULL".to_string()))
+                            .collect();
+                        println!("  {}", vals.join(" | "));
                     }
-                };
-
-                let mut count = 0;
-                while let Ok(Some(row)) = rows.next() {
-                    let mut vals = Vec::new();
-                    for i in 0..col_count {
-                        let val: String = row
-                            .get::<_, rusqlite::types::Value>(i)
-                            .map(|v| match v {
-                                rusqlite::types::Value::Null => "NULL".into(),
-                                rusqlite::types::Value::Integer(i) => i.to_string(),
-                                rusqlite::types::Value::Real(f) => f.to_string(),
-                                rusqlite::types::Value::Text(t) => t,
-                                rusqlite::types::Value::Blob(b) => format!("<blob {}B>", b.len()),
-                            })
-                            .unwrap_or_else(|_| "?".into());
-                        vals.push(val);
-                    }
-                    println!("  {}", vals.join(" | "));
-                    count += 1;
+                    println!("({} row(s) returned)\n", rows.len());
                 }
-                println!("({} row(s) returned)\n", count);
             }
-            Err(e) => eprintln!("\x1b[31mSQL Prepare Error:\x1b[0m {}", e),
+            Err(e) => eprintln!("\x1b[31mSQL Error:\x1b[0m {}", e),
         }
     } else {
-        match conn.execute(cmd, []) {
+        match db.execute_params(cmd, &[]) {
             Ok(affected) => println!("\x1b[32m[OK]\x1b[0m {} row(s) affected.", affected),
             Err(e) => eprintln!("\x1b[31mSQL Execution Error:\x1b[0m {}", e),
         }
@@ -1983,23 +2094,26 @@ fn list_schedule() {
 }
 
 fn run_seed() {
-    let db_path = "terminus.db";
-    println!("\x1b[32m[OK] Seeding Database ({})...\x1b[0m", db_path);
-
-    // Ensure database and tables exist
-    run_migrations();
-
-    let conn = match rusqlite::Connection::open(db_path) {
-        Ok(c) => c,
+    let db = match cli_database() {
+        Ok(db) => db,
         Err(e) => {
             eprintln!("\x1b[31m[ERROR] Failed to open database: {}\x1b[0m", e);
             return;
         }
     };
+    let config = terminus::orm::DatabaseConfig::from_env().unwrap_or_else(|_| {
+        terminus::orm::DatabaseConfig {
+            database: "terminus.db".to_string(),
+        }
+    });
+    println!(
+        "\x1b[32m[OK] Seeding Database ({})...\x1b[0m",
+        config.database
+    );
 
-    // Local development seed only. The password comes from
-    // TERMINUS_SEED_PASSWORD, or is generated and printed exactly once here.
-    // Never seed a production database with shared or printed credentials.
+    // Ensure database and tables exist
+    run_migrations();
+
     let seed_password = match std::env::var("TERMINUS_SEED_PASSWORD") {
         Ok(password) if password.len() >= 12 => password,
         Ok(_) => {
@@ -2033,21 +2147,36 @@ fn run_seed() {
         ),
     ];
 
+    let ph = |i: usize| db.kind().placeholder(i);
     let mut user_count = 0;
     for (name, email, role, status) in seed_users {
-        let exists: bool = conn
-            .query_row(
-                "SELECT COUNT(1) FROM users WHERE email = ?1",
-                rusqlite::params![email],
-                |r| r.get::<_, usize>(0),
-            )
+        let check_sql = format!(
+            "SELECT COUNT(*) AS c FROM users WHERE LOWER(email) = LOWER({})",
+            ph(1)
+        );
+        let exists: bool = db
+            .query_params(&check_sql, &[email.to_string()])
+            .ok()
+            .and_then(|rows| rows.into_iter().next())
+            .and_then(|row| col_val(&row, "c").parse::<usize>().ok())
             .map(|c| c > 0)
             .unwrap_or(false);
 
         if !exists {
-            let _ = conn.execute(
-                "INSERT INTO users (name, email, password_hash, role, status, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                rusqlite::params![name, email, hashed_pw, role, status, now],
+            let insert_sql = format!(
+                "INSERT INTO users (name, email, password_hash, role, status, created_at) VALUES ({}, {}, {}, {}, {}, {})",
+                ph(1), ph(2), ph(3), ph(4), ph(5), ph(6)
+            );
+            let _ = db.execute_params(
+                &insert_sql,
+                &[
+                    name.to_string(),
+                    email.to_string(),
+                    hashed_pw.clone(),
+                    role.to_string(),
+                    status.to_string(),
+                    now.clone(),
+                ],
             );
             user_count += 1;
         }
@@ -2072,9 +2201,19 @@ fn run_seed() {
 
     let mut order_count = 0;
     for (customer, total, status, notes) in seed_orders {
-        let _ = conn.execute(
-            "INSERT INTO orders (customer_name, total_cents, status, notes, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-            rusqlite::params![customer, total, status, notes, now],
+        let insert_sql = format!(
+            "INSERT INTO orders (customer_name, total_cents, status, notes, created_at) VALUES ({}, {}, {}, {}, {})",
+            ph(1), ph(2), ph(3), ph(4), ph(5)
+        );
+        let _ = db.execute_params(
+            &insert_sql,
+            &[
+                customer.to_string(),
+                total.to_string(),
+                status.to_string(),
+                notes.to_string(),
+                now.clone(),
+            ],
         );
         order_count += 1;
     }
@@ -2088,65 +2227,63 @@ fn run_seed() {
 }
 
 fn inspect_tables() {
-    let db_path = "terminus.db";
+    let db = match cli_database() {
+        Ok(db) => db,
+        Err(e) => {
+            eprintln!("\x1b[31m[ERROR] Failed to open database: {}\x1b[0m", e);
+            return;
+        }
+    };
+    let config = terminus::orm::DatabaseConfig::from_env().unwrap_or_else(|_| {
+        terminus::orm::DatabaseConfig {
+            database: "terminus.db".to_string(),
+        }
+    });
+    let kind = config.kind();
+    let backend_name = match kind {
+        terminus::backend::DatabaseKind::Sqlite => "SQLite",
+        terminus::backend::DatabaseKind::Postgres => "PostgreSQL",
+        terminus::backend::DatabaseKind::Mysql => "MySQL",
+    };
+
     println!(
-        "\x1b[32m[OK] Inspecting SQLite Database ({}):\x1b[0m\n",
-        db_path
+        "\x1b[32m[OK] Inspecting {} Database ({}):\x1b[0m\n",
+        backend_name, config.database
     );
 
-    if !std::path::Path::new(db_path).exists() {
-        println!("  Database file '{}' does not exist yet.", db_path);
-        println!("  Run 'terminus migrate' to initialize and create database tables.\n");
-        return;
-    }
+    let observed_models = match kind {
+        terminus::backend::DatabaseKind::Sqlite => inspect_sqlite_models(&db),
+        terminus::backend::DatabaseKind::Postgres => inspect_postgres_models(&db),
+        terminus::backend::DatabaseKind::Mysql => inspect_mysql_models(&db),
+    };
 
-    let conn = match rusqlite::Connection::open(db_path) {
-        Ok(c) => c,
+    let models = match observed_models {
+        Ok(m) => m,
         Err(e) => {
-            eprintln!("\x1b[31m[ERROR] Failed to open {}: {}\x1b[0m", db_path, e);
+            eprintln!("\x1b[31m[ERROR] Failed to query tables: {}\x1b[0m", e);
             return;
         }
     };
 
-    let mut stmt = match conn.prepare(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name;"
-    ) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("\x1b[31m[ERROR] Failed to query sqlite_master: {}\x1b[0m", e);
-            return;
-        }
-    };
-
-    let tables: Vec<String> = stmt
-        .query_map([], |r| r.get(0))
-        .map(|rows| rows.flatten().collect())
-        .unwrap_or_default();
-
-    if tables.is_empty() {
+    if models.is_empty() {
         println!("  Database exists but contains no user tables. Run 'terminus migrate'.");
         return;
     }
 
-    println!("  {:<30} {:>10} {:>10}", "TABLE NAME", "COLUMNS", "ROWS");
+    println!("  {:<30} {:>10} {:>10}", "TABLE NAME", "COLUMNS", "RECORDS");
     println!("  {}", "─".repeat(54));
 
-    for table in tables {
-        let col_count: usize = conn
-            .prepare(&format!("PRAGMA table_info('{}');", table))
-            .and_then(|mut p| {
-                let rows = p.query_map([], |_| Ok(()))?;
-                Ok(rows.count())
-            })
+    for model in models {
+        let col_count = model.fields.len();
+        let count_query = format!("SELECT COUNT(*) AS c FROM {}", model.table);
+        let row_count: u64 = db
+            .query_params(&count_query, &[])
+            .ok()
+            .and_then(|rows| rows.into_iter().next())
+            .and_then(|row| col_val(&row, "c").parse().ok())
             .unwrap_or(0);
 
-        let row_count: usize = conn
-            .query_row(&format!("SELECT COUNT(1) FROM '{}';", table), [], |r| {
-                r.get(0)
-            })
-            .unwrap_or(0);
-
-        println!("  {:<30} {:>10} {:>10}", table, col_count, row_count);
+        println!("  {:<30} {:>10} {:>10}", model.table, col_count, row_count);
     }
     println!("  {}", "─".repeat(54));
 }
@@ -2390,7 +2527,7 @@ fn view_mail_outbox() {
     println!("Sent Outbox: 0 pending / 0 failed");
 }
 
-fn make_token(name_opt: Option<&str>) {
+fn make_token(name_opt: Option<&str>, abilities_opt: Option<&str>) {
     let name = match name_opt {
         Some(n) if !n.is_empty() => n.to_string(),
         _ => match prompt::text("Token name", Some("cli-access"), None, true) {
@@ -2402,30 +2539,36 @@ fn make_token(name_opt: Option<&str>) {
         },
     };
 
-    let abilities = match prompt::multiselect(
-        "Select token abilities:",
-        &[
-            ("*", "Full API Access (*)"),
-            ("read", "Read Access (read)"),
-            ("write", "Write Access (write)"),
-            ("admin", "Admin Privileges (admin)"),
-        ],
-        &["*"],
-    ) {
-        Ok(a) => a.into_iter().map(String::from).collect(),
-        Err(_) => vec!["*".to_string()],
+    let abilities: Vec<String> = if let Some(ab) = abilities_opt {
+        ab.split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect()
+    } else {
+        match prompt::multiselect(
+            "Select token abilities:",
+            &[
+                ("*", "Full API Access (*)"),
+                ("read", "Read Access (read)"),
+                ("write", "Write Access (write)"),
+                ("admin", "Admin Privileges (admin)"),
+            ],
+            &["*"],
+        ) {
+            Ok(a) => a.into_iter().map(String::from).collect(),
+            Err(_) => vec!["*".to_string()],
+        }
     };
 
-    let db_path = "terminus.db";
-    let conn = match rusqlite::Connection::open(db_path) {
-        Ok(c) => Arc::new(Mutex::new(c)),
+    let db = match cli_database() {
+        Ok(db) => db,
         Err(e) => {
             eprintln!("\x1b[31mError opening database:\x1b[0m {e}");
             return;
         }
     };
 
-    let store = match SqliteTokenStore::new(conn) {
+    let store = match DatabaseTokenStore::new(db) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("\x1b[31mError initializing token store:\x1b[0m {e}");
@@ -2463,16 +2606,15 @@ fn make_token(name_opt: Option<&str>) {
 }
 
 fn list_tokens() {
-    let db_path = "terminus.db";
-    let conn = match rusqlite::Connection::open(db_path) {
-        Ok(c) => Arc::new(Mutex::new(c)),
+    let db = match cli_database() {
+        Ok(db) => db,
         Err(e) => {
             eprintln!("\x1b[31mError opening database:\x1b[0m {e}");
             return;
         }
     };
 
-    let store = match SqliteTokenStore::new(conn) {
+    let store = match DatabaseTokenStore::new(db) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("\x1b[31mError initializing token store:\x1b[0m {e}");
@@ -2482,7 +2624,11 @@ fn list_tokens() {
 
     let tokens = store.list_for("User", "1");
     if tokens.is_empty() {
-        prompt::info("No personal access tokens found in terminus.db.");
+        let config = terminus::orm::DatabaseConfig::from_env().unwrap_or_default();
+        prompt::info(format!(
+            "No personal access tokens found in {}.",
+            config.database
+        ));
         return;
     }
 
@@ -2505,7 +2651,7 @@ fn list_tokens() {
     );
 }
 
-fn revoke_token(id_opt: Option<&str>) {
+fn revoke_token(id_opt: Option<&str>, force: bool) {
     let id = match id_opt {
         Some(i) if !i.is_empty() => i.to_string(),
         _ => match prompt::text("Token ID to revoke", None, None, true) {
@@ -2517,27 +2663,28 @@ fn revoke_token(id_opt: Option<&str>) {
         },
     };
 
-    match prompt::confirm(
-        &format!("Are you sure you want to revoke token '{id}'?"),
-        false,
-    ) {
-        Ok(true) => {}
-        _ => {
-            println!("Revocation cancelled.");
-            return;
+    if !force {
+        match prompt::confirm(
+            &format!("Are you sure you want to revoke token '{id}'?"),
+            false,
+        ) {
+            Ok(true) => {}
+            _ => {
+                println!("Revocation cancelled.");
+                return;
+            }
         }
     }
 
-    let db_path = "terminus.db";
-    let conn = match rusqlite::Connection::open(db_path) {
-        Ok(c) => Arc::new(Mutex::new(c)),
+    let db = match cli_database() {
+        Ok(db) => db,
         Err(e) => {
             eprintln!("\x1b[31mError opening database:\x1b[0m {e}");
             return;
         }
     };
 
-    let store = match SqliteTokenStore::new(conn) {
+    let store = match DatabaseTokenStore::new(db) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("\x1b[31mError initializing token store:\x1b[0m {e}");
