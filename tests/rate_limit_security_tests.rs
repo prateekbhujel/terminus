@@ -197,3 +197,100 @@ async fn real_tcp_listener_populates_connect_info_and_blocks_spoofed_xff() {
         .starts_with("HTTP/1.1 429 Too Many Requests"));
     server.abort();
 }
+
+#[tokio::test]
+async fn request_ip_ignores_spoofed_headers_from_untrusted_direct_peer() {
+    let app = App::new().get("/ip", || async { terminus::helpers::request().ip() });
+    let router = app.build();
+
+    let mut request = Request::builder()
+        .uri("/ip")
+        .method("GET")
+        .header("x-forwarded-for", "198.51.100.5")
+        .header("x-real-ip", "198.51.100.6")
+        .body(Body::empty())
+        .unwrap();
+    request.extensions_mut().insert(ConnectInfo(
+        "203.0.113.10:5000".parse::<SocketAddr>().unwrap(),
+    ));
+
+    let response = router.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    assert_eq!(std::str::from_utf8(&body).unwrap(), "203.0.113.10");
+}
+
+#[tokio::test]
+async fn request_ip_resolves_forwarded_chain_from_trusted_proxy() {
+    let proxies: Vec<IpAddr> = vec!["127.0.0.1".parse().unwrap(), "10.0.0.1".parse().unwrap()];
+    let app = App::new()
+        .trusted_proxies(&proxies)
+        .get("/ip", || async { terminus::helpers::request().ip() });
+    let router = app.build();
+
+    let mut request = Request::builder()
+        .uri("/ip")
+        .method("GET")
+        .header("x-forwarded-for", "1.1.1.1, 198.51.100.7, 10.0.0.1")
+        .body(Body::empty())
+        .unwrap();
+    request
+        .extensions_mut()
+        .insert(ConnectInfo("127.0.0.1:443".parse::<SocketAddr>().unwrap()));
+
+    let response = router.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    assert_eq!(std::str::from_utf8(&body).unwrap(), "198.51.100.7");
+}
+
+#[tokio::test]
+async fn request_ip_falls_back_to_x_real_ip_when_xff_absent_and_proxy_trusted() {
+    let proxies: Vec<IpAddr> = vec!["127.0.0.1".parse().unwrap()];
+    let app = App::new()
+        .trusted_proxies(&proxies)
+        .get("/ip", || async { terminus::helpers::request().ip() });
+    let router = app.build();
+
+    let mut request = Request::builder()
+        .uri("/ip")
+        .method("GET")
+        .header("x-real-ip", "198.51.100.99")
+        .body(Body::empty())
+        .unwrap();
+    request
+        .extensions_mut()
+        .insert(ConnectInfo("127.0.0.1:443".parse::<SocketAddr>().unwrap()));
+
+    let response = router.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    assert_eq!(std::str::from_utf8(&body).unwrap(), "198.51.100.99");
+}
+
+#[tokio::test]
+async fn request_ip_in_memory_requests_ignore_spoofed_headers() {
+    let app = App::new().get("/ip", || async { terminus::helpers::request().ip() });
+    let router = app.build();
+
+    let request = Request::builder()
+        .uri("/ip")
+        .method("GET")
+        .header("x-forwarded-for", "198.51.100.5")
+        .header("x-real-ip", "198.51.100.6")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = router.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    assert_eq!(std::str::from_utf8(&body).unwrap(), "127.0.0.1");
+}

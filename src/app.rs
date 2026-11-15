@@ -26,6 +26,7 @@ pub struct App {
     pub session_config: Option<crate::session::SessionConfig>,
     pub rate_limiter: Option<crate::ratelimit::RateLimiter>,
     pub metrics_enabled: bool,
+    pub trusted_proxies: Vec<std::net::IpAddr>,
 }
 
 impl Default for App {
@@ -55,6 +56,7 @@ impl App {
             session_config: None,
             rate_limiter: None,
             metrics_enabled: false,
+            trusted_proxies: Vec::new(),
         }
     }
 
@@ -127,10 +129,27 @@ impl App {
         window: std::time::Duration,
         trusted_proxies: &[std::net::IpAddr],
     ) -> Self {
+        self.trusted_proxies = trusted_proxies
+            .iter()
+            .copied()
+            .map(crate::ratelimit::canonical_ip)
+            .collect();
         self.rate_limiter = Some(
             crate::ratelimit::RateLimiter::new(max_requests, window)
                 .with_trusted_proxies(trusted_proxies),
         );
+        self
+    }
+
+    /// Explicitly allowlist reverse proxy socket IPs for client IP resolution
+    /// (backing `request().ip()`). Forwarded headers are ignored unless the
+    /// socket peer matches one of these addresses.
+    pub fn trusted_proxies(mut self, proxies: &[std::net::IpAddr]) -> Self {
+        self.trusted_proxies = proxies
+            .iter()
+            .copied()
+            .map(crate::ratelimit::canonical_ip)
+            .collect();
         self
     }
 
@@ -435,7 +454,10 @@ impl App {
             ));
         }
         r.layer(axum::middleware::from_fn_with_state(
-            self.session_config,
+            (
+                self.session_config,
+                std::sync::Arc::new(self.trusted_proxies),
+            ),
             request_context,
         ))
     }
@@ -508,9 +530,10 @@ fn spec_export_target_from_process() -> Option<String> {
 }
 
 async fn request_context(
-    axum::extract::State(session_config): axum::extract::State<
+    axum::extract::State((session_config, trusted_proxies)): axum::extract::State<(
         Option<crate::session::SessionConfig>,
-    >,
+        std::sync::Arc<Vec<std::net::IpAddr>>,
+    )>,
     request: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> Response {
@@ -534,10 +557,16 @@ async fn request_context(
             }
         }
     }
-    let info = crate::helpers::RequestInfo::from_headers(
+    let peer = request
+        .extensions()
+        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+        .map(|ci| ci.0.ip());
+    let info = crate::helpers::RequestInfo::from_headers_with_peer(
         request.method().as_str(),
         request.uri().path(),
         request.headers(),
+        peer,
+        &trusted_proxies,
     );
     let (mut response, session, error) =
         crate::helpers::with_request_context(info, session_config.clone(), next.run(request)).await;
