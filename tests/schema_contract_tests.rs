@@ -542,3 +542,123 @@ fn cli_cache_clear_flushes_persistent_sqlite_and_redis_stores() {
         }
     }
 }
+
+#[test]
+fn cli_route_list_and_make_sdk_consume_exported_app_spec() {
+    let dir = TempWorkspace::new();
+    let spec_path = dir.path().join("exported-spec.json");
+
+    // 1. Without manifest, route:list and make:sdk must fail nonzero
+    let out_routes_missing = dir.run_cli(&["route:list"], &[]);
+    assert!(
+        !out_routes_missing.status.success(),
+        "route:list must fail when no manifest exists"
+    );
+    let err_routes = String::from_utf8_lossy(&out_routes_missing.stderr);
+    assert!(
+        err_routes.contains("No application-exported AppSpec manifest found"),
+        "stderr was: {err_routes}"
+    );
+
+    let out_sdk_missing = dir.run_cli(&["make:sdk"], &[]);
+    assert!(
+        !out_sdk_missing.status.success(),
+        "make:sdk must fail when no manifest exists"
+    );
+    let err_sdk = String::from_utf8_lossy(&out_sdk_missing.stderr);
+    assert!(
+        err_sdk.contains("No application-exported AppSpec manifest found"),
+        "stderr was: {err_sdk}"
+    );
+
+    // 2. make:sdk rejects unknown languages with exit code 1
+    let out_sdk_bad_lang = dir.run_cli(&["make:sdk", "--lang=cobol"], &[]);
+    assert!(
+        !out_sdk_bad_lang.status.success(),
+        "make:sdk must fail on unsupported language"
+    );
+    let err_lang = String::from_utf8_lossy(&out_sdk_bad_lang.stderr);
+    assert!(
+        err_lang.contains("Unsupported language 'cobol'"),
+        "stderr was: {err_lang}"
+    );
+
+    // 3. Create a valid AppSpec manifest
+    let mut spec = terminus::spec::AppSpec::new("Inventory App");
+    spec.add_route(
+        terminus::spec::RouteSpec::new("GET", "/api/v2/items", "list_items")
+            .with_auth(true)
+            .with_description("List warehouse items"),
+    );
+    spec.add_route(
+        terminus::spec::RouteSpec::new("POST", "/api/v2/items", "create_item")
+            .with_auth(true)
+            .with_description("Create warehouse item"),
+    );
+    let mut model = terminus::spec::ModelSpec::new("Item", "items");
+    model = model.add_field(terminus::spec::FieldSpec::new("id", "i64", "BIGINT").primary());
+    model = model.add_field(terminus::spec::FieldSpec::new(
+        "sku",
+        "String",
+        "VARCHAR(64)",
+    ));
+    spec.add_model(model);
+    spec.add_resource(terminus::spec::ResourceSpec::new("Item", "items", "items"));
+    spec.write_to_path(&spec_path).unwrap();
+
+    let spec_flag = format!("--spec={}", spec_path.display());
+
+    // 4. route:list with --spec
+    let out_routes = dir.run_cli(&["route:list", &spec_flag], &[]);
+    assert!(
+        out_routes.status.success(),
+        "route:list with --spec must succeed"
+    );
+    let stdout_routes = String::from_utf8_lossy(&out_routes.stdout);
+    assert!(
+        stdout_routes.contains("Inventory App"),
+        "stdout was: {stdout_routes}"
+    );
+    assert!(
+        stdout_routes.contains("/api/v2/items"),
+        "stdout was: {stdout_routes}"
+    );
+    assert!(
+        stdout_routes.contains("List warehouse items"),
+        "stdout was: {stdout_routes}"
+    );
+    assert!(
+        stdout_routes.contains("Resource: Item (/admin/items)"),
+        "stdout was: {stdout_routes}"
+    );
+
+    // 5. make:sdk --lang=typescript with --spec
+    let out_sdk_ts = dir.run_cli(&["make:sdk", "--lang=typescript", &spec_flag], &[]);
+    assert!(
+        out_sdk_ts.status.success(),
+        "make:sdk typescript must succeed"
+    );
+    let ts_file = dir.path().join("terminus-client.ts");
+    assert!(ts_file.exists(), "terminus-client.ts should be generated");
+    let ts_code = fs::read_to_string(&ts_file).unwrap();
+    assert!(
+        ts_code.contains("export interface Item"),
+        "ts code was: {ts_code}"
+    );
+    assert!(ts_code.contains("sku: string;"), "ts code was: {ts_code}");
+    assert!(ts_code.contains("/api/v2/items"), "ts code was: {ts_code}");
+
+    // 6. make:sdk --lang=openapi with --spec
+    let out_sdk_openapi = dir.run_cli(&["make:sdk", "--lang=openapi", &spec_flag], &[]);
+    assert!(
+        out_sdk_openapi.status.success(),
+        "make:sdk openapi must succeed"
+    );
+    let openapi_file = dir.path().join("openapi.json");
+    assert!(openapi_file.exists(), "openapi.json should be generated");
+    let openapi_code = fs::read_to_string(&openapi_file).unwrap();
+    let openapi_json: Value = serde_json::from_str(&openapi_code).unwrap();
+    assert_eq!(openapi_json["openapi"], "3.0.3");
+    assert_eq!(openapi_json["info"]["title"], "Inventory App");
+    assert!(openapi_json["paths"]["/api/v2/items"].is_object());
+}

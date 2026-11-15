@@ -157,7 +157,17 @@ fn main() {
             let name = args.get(2).map(|s| s.as_str());
             make_mail(name);
         }
-        "routes" | "route:list" => print_routes(),
+        "routes" | "route:list" => {
+            let spec_arg = args
+                .iter()
+                .find_map(|a| a.strip_prefix("--spec="))
+                .or_else(|| {
+                    args.windows(2)
+                        .find(|w| w[0] == "--spec")
+                        .map(|w| w[1].as_str())
+                });
+            print_routes(spec_arg);
+        }
         "queue:work" => run_queue_worker(),
         "ws:serve" => run_ws_server(),
         "theme:preview" => preview_theme(),
@@ -165,9 +175,26 @@ fn main() {
         "make:sdk" | "client:sdk" => {
             let lang = args
                 .iter()
-                .find(|a| a.starts_with("--lang="))
-                .map(|a| a.trim_start_matches("--lang="));
-            make_sdk(lang);
+                .find_map(|a| a.strip_prefix("--lang="))
+                .or_else(|| {
+                    args.windows(2)
+                        .find(|w| w[0] == "--lang")
+                        .map(|w| w[1].as_str())
+                })
+                .or_else(|| {
+                    args.get(2)
+                        .map(|s| s.as_str())
+                        .filter(|s| !s.starts_with("--"))
+                });
+            let spec_arg = args
+                .iter()
+                .find_map(|a| a.strip_prefix("--spec="))
+                .or_else(|| {
+                    args.windows(2)
+                        .find(|w| w[0] == "--spec")
+                        .map(|w| w[1].as_str())
+                });
+            make_sdk(lang, spec_arg);
         }
         unknown => {
             eprintln!("\x1b[31mError:\x1b[0m Unknown command '{unknown}'\n");
@@ -1830,7 +1857,7 @@ fn execute_tinker_command(conn: &rusqlite::Connection, cmd: &str) -> bool {
     }
 
     if lower == "routes" {
-        print_routes();
+        print_routes(None);
         return false;
     }
 
@@ -2249,29 +2276,71 @@ pub fn send_{name_snake}(to: &str, mailer: &Mailer) -> Result<(), String> {{
     );
 }
 
-fn print_routes() {
+fn load_app_spec(spec_arg: Option<&str>) -> Result<terminus::spec::AppSpec, String> {
+    let env_spec = env::var("TERMINUS_APP_SPEC")
+        .ok()
+        .filter(|s| !s.trim().is_empty());
+    let explicit_spec = spec_arg.map(str::to_string).or(env_spec);
+    let default_spec = terminus::spec::DEFAULT_SPEC_PATH;
+
+    if let Some(path) = explicit_spec {
+        terminus::spec::AppSpec::read_from_path(&path)
+    } else if Path::new(default_spec).exists() {
+        terminus::spec::AppSpec::read_from_path(default_spec)
+    } else {
+        Err(format!(
+            "No application-exported AppSpec manifest found (checked '{default_spec}' and --spec / TERMINUS_APP_SPEC). Run your app with `--export-spec {default_spec}` or `TERMINUS_EXPORT_SPEC={default_spec}` to emit authoritative application routes and resources."
+        ))
+    }
+}
+
+fn print_routes(spec_arg: Option<&str>) {
+    let spec = match load_app_spec(spec_arg) {
+        Ok(s) => s,
+        Err(err) => {
+            eprintln!("[ERROR] {err}");
+            std::process::exit(1);
+        }
+    };
+
     print_banner();
     println!(
-        r#"Registered Application Routes & Endpoints:
-
-  METHOD       ROUTE                     HANDLER / DESCRIPTION
-  ──────────────────────────────────────────────────────────────────────────
-  GET          /                         Home & Dashboard View (Blade-style template)
-  GET, POST    /web/login                Session Authentication & CSRF Form Handler
-  POST         /web/logout               Terminates Session & Sweeps Flash Cookies
-  GET          /app/spec                 Deterministic Topology Introspection (--json)
-  GET          /admin/dashboard          Executive KPI Analytics & Activity Feed
-  GET          /admin/:slug              Active Record Table (Search, Filters, Pagination)
-  GET          /admin/:slug/table        HTMX/fetch Table Partial (Zero Full-Page Reload)
-  GET          /admin/:slug/api          Headless REST JSON API (?page=&per_page=)
-  GET, POST    /admin/:slug/create       Resource Form Creation with Valid<T>
-  GET, POST    /admin/:slug/edit/:id     Resource Update Form with Flash Redirect
-  POST         /admin/:slug/delete/:id   Resource Deletion with Flash Banner
-  GET          /api/v1/users             REST JSON Users List (Personal Access Token)
-  GET          /api/v1/orders            Paginated Active Record Orders
-  GET          /admin/ws                 Real-time WebSocket Broadcast Channel (Echo)
-"#
+        "Registered Application Routes & Endpoints ({} v{}):\n",
+        spec.app_name, spec.version
     );
+    println!(
+        "  {:<10} {:<32} {:<12} HANDLER / DESCRIPTION",
+        "METHOD", "ROUTE", "AUTH"
+    );
+    println!("  {}", "─".repeat(78));
+
+    if spec.routes.is_empty() && spec.resources.is_empty() {
+        println!("  (No explicit routes or resources registered)");
+    }
+
+    for route in &spec.routes {
+        let auth_str = match route.auth {
+            terminus::spec::RouteAuth::Required => "Required",
+            terminus::spec::RouteAuth::Public => "Public",
+            terminus::spec::RouteAuth::Unknown => "-",
+        };
+        let desc = route.description.as_deref().unwrap_or(&route.handler_name);
+        println!(
+            "  {:<10} {:<32} {:<12} {}",
+            route.method, route.path, auth_str, desc
+        );
+    }
+
+    if !spec.resources.is_empty() {
+        println!("\nResource Mounts:");
+        for res in &spec.resources {
+            println!(
+                "  Resource: {} (/admin/{}) -> Table: {}",
+                res.name, res.slug, res.table
+            );
+        }
+    }
+    println!();
 }
 
 fn run_ws_server() {
@@ -2482,51 +2551,90 @@ fn revoke_token(id_opt: Option<&str>) {
     }
 }
 
-fn make_sdk(lang: Option<&str>) {
-    let language = lang.unwrap_or("typescript");
-    let sdk_gen = SdkGenerator::new("Terminus App", "1.0.0")
-        .type_schema(
-            "User",
-            vec![
-                ("id", "string"),
-                ("name", "string"),
-                ("email", "string"),
-                ("role", "string"),
-            ],
-        )
-        .type_schema(
-            "Order",
-            vec![
-                ("id", "string"),
-                ("customerName", "string"),
-                ("total", "number"),
-                ("status", "string"),
-                ("createdAt", "string"),
-            ],
-        )
-        .endpoint(
-            "GET",
-            "/api/orders",
-            None,
-            "Order[]",
-            "List customer orders",
-        )
-        .endpoint(
-            "POST",
-            "/api/orders",
-            Some("Partial<Order>"),
-            "Order",
-            "Place a new order",
-        )
-        .endpoint(
-            "GET",
-            "/api/user/profile",
-            None,
-            "User",
-            "Get authenticated user profile",
-        );
+fn make_sdk(lang: Option<&str>, spec_arg: Option<&str>) {
+    let language = lang.unwrap_or("typescript").to_lowercase();
+    match language.as_str() {
+        "typescript" | "ts" | "openapi" | "swagger" | "json" => {}
+        unsupported => {
+            eprintln!("[ERROR] Unsupported language '{unsupported}'. Supported targets: typescript, openapi, json.");
+            std::process::exit(1);
+        }
+    }
 
-    let (filename, code) = match language {
+    let spec = match load_app_spec(spec_arg) {
+        Ok(s) => s,
+        Err(err) => {
+            eprintln!("[ERROR] {err}");
+            std::process::exit(1);
+        }
+    };
+
+    let mut sdk_gen = SdkGenerator::new(&spec.app_name, &spec.version);
+
+    for model in &spec.models {
+        let fields: Vec<(&str, &str)> = model
+            .fields
+            .iter()
+            .map(|f| {
+                let ts_type = match f.rust_type.as_deref() {
+                    Some("i32" | "i64" | "u32" | "u64" | "f32" | "f64" | "usize") => "number",
+                    Some("bool") => "boolean",
+                    Some(_) => "string",
+                    None => match f.sql_type.to_lowercase().as_str() {
+                        s if s.contains("int")
+                            || s.contains("numeric")
+                            || s.contains("float")
+                            || s.contains("real") =>
+                        {
+                            "number"
+                        }
+                        s if s.contains("bool") => "boolean",
+                        _ => "string",
+                    },
+                };
+                (f.name.as_str(), ts_type)
+            })
+            .collect();
+        sdk_gen = sdk_gen.type_schema(&model.name, fields);
+    }
+
+    for route in &spec.routes {
+        let desc = route.description.as_deref().unwrap_or(&route.handler_name);
+        sdk_gen = sdk_gen.endpoint(&route.method, &route.path, None, "any", desc);
+    }
+
+    for res in &spec.resources {
+        let base = format!("/admin/{}", res.slug);
+        let list_desc = format!("List {} records", res.name);
+        let create_desc = format!("Create {} record", res.name);
+        let detail_desc = format!("Get {} record by id", res.name);
+        let delete_desc = format!("Delete {} record by id", res.name);
+        let model_type = if spec.models.iter().any(|m| m.name == res.name) {
+            res.name.as_str()
+        } else {
+            "any"
+        };
+        let list_type = format!("{model_type}[]");
+
+        sdk_gen = sdk_gen.endpoint("GET", &base, None, &list_type, &list_desc);
+        sdk_gen = sdk_gen.endpoint(
+            "POST",
+            format!("{base}/create"),
+            Some(model_type),
+            model_type,
+            &create_desc,
+        );
+        sdk_gen = sdk_gen.endpoint("GET", format!("{base}/:id"), None, model_type, &detail_desc);
+        sdk_gen = sdk_gen.endpoint(
+            "POST",
+            format!("{base}/delete/:id"),
+            None,
+            "void",
+            &delete_desc,
+        );
+    }
+
+    let (filename, code) = match language.as_str() {
         "openapi" | "swagger" | "json" => (
             "openapi.json",
             serde_json::to_string_pretty(&sdk_gen.to_openapi_json()).unwrap_or_default(),
@@ -2535,8 +2643,8 @@ fn make_sdk(lang: Option<&str>) {
     };
 
     if let Err(e) = std::fs::write(filename, code) {
-        eprintln!("\x1b[31mError writing client contract:\x1b[0m {e}");
-        return;
+        eprintln!("[ERROR] Error writing client contract to {filename}: {e}");
+        std::process::exit(1);
     }
     println!(
         "\x1b[32mSuccess:\x1b[0m Generated typed client contract in \x1b[1m{}\x1b[0m",
