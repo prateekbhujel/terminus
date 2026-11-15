@@ -662,3 +662,316 @@ fn cli_route_list_and_make_sdk_consume_exported_app_spec() {
     assert_eq!(openapi_json["info"]["title"], "Inventory App");
     assert!(openapi_json["paths"]["/api/v2/items"].is_object());
 }
+
+#[test]
+fn cli_database_commands_respect_custom_sqlite_database_url() {
+    let dir = TempWorkspace::new();
+    let custom_db_path = dir.path().join("warehouse.db");
+    let default_db_path = dir.path().join("terminus.db");
+    let db_url = format!("sqlite://{}", custom_db_path.display());
+    let envs = [("DATABASE_URL", db_url.as_str())];
+
+    // 1. Run migrations on custom database path
+    let out_migrate = dir.run_cli(&["migrate"], &envs);
+    assert!(
+        out_migrate.status.success(),
+        "migrate failed: {}",
+        String::from_utf8_lossy(&out_migrate.stderr)
+    );
+    assert!(
+        custom_db_path.exists(),
+        "custom database file must be created"
+    );
+    assert!(
+        !default_db_path.exists(),
+        "terminus.db must not be created when DATABASE_URL is set"
+    );
+
+    // 2. Seed custom database
+    let out_seed = dir.run_cli(
+        &["db:seed"],
+        &[
+            ("DATABASE_URL", db_url.as_str()),
+            ("TERMINUS_SEED_PASSWORD", "secret12345678"),
+        ],
+    );
+    assert!(
+        out_seed.status.success(),
+        "db:seed failed: {}",
+        String::from_utf8_lossy(&out_seed.stderr)
+    );
+    let seed_stdout = String::from_utf8_lossy(&out_seed.stdout);
+    assert!(
+        seed_stdout.contains("Seeding Database"),
+        "stdout was: {seed_stdout}"
+    );
+    assert!(
+        seed_stdout.contains("Seeded 4 user account(s)"),
+        "stdout was: {seed_stdout}"
+    );
+    assert!(
+        !default_db_path.exists(),
+        "terminus.db must not be created during db:seed"
+    );
+
+    // 3. Inspect tables via db:tables
+    let out_tables = dir.run_cli(&["db:tables"], &envs);
+    assert!(
+        out_tables.status.success(),
+        "db:tables failed: {}",
+        String::from_utf8_lossy(&out_tables.stderr)
+    );
+    let tables_stdout = String::from_utf8_lossy(&out_tables.stdout);
+    assert!(
+        tables_stdout.contains("warehouse.db"),
+        "stdout should mention warehouse.db: {tables_stdout}"
+    );
+    assert!(
+        tables_stdout.contains("users"),
+        "stdout should list users: {tables_stdout}"
+    );
+    assert!(
+        tables_stdout.contains("orders"),
+        "stdout should list orders: {tables_stdout}"
+    );
+    assert!(
+        !default_db_path.exists(),
+        "terminus.db must not be created during db:tables"
+    );
+
+    // 4. Query via tinker --execute
+    let out_tinker = dir.run_cli(
+        &[
+            "tinker",
+            "--execute=SELECT email FROM users ORDER BY id ASC LIMIT 1",
+        ],
+        &envs,
+    );
+    assert!(
+        out_tinker.status.success(),
+        "tinker failed: {}",
+        String::from_utf8_lossy(&out_tinker.stderr)
+    );
+    let tinker_stdout = String::from_utf8_lossy(&out_tinker.stdout);
+    assert!(
+        tinker_stdout.contains("pratik@terminus.dev"),
+        "tinker stdout should contain seeded user email: {tinker_stdout}"
+    );
+    assert!(
+        !default_db_path.exists(),
+        "terminus.db must not be created during tinker"
+    );
+
+    // 5. Create token via make:token
+    let out_make_token = dir.run_cli(
+        &["make:token", "deploy-key", "--abilities=read,write"],
+        &envs,
+    );
+    assert!(
+        out_make_token.status.success(),
+        "make:token failed: {}",
+        String::from_utf8_lossy(&out_make_token.stderr)
+    );
+    let make_token_stdout = String::from_utf8_lossy(&out_make_token.stdout);
+    assert!(
+        make_token_stdout.contains("Personal Access Token created successfully!"),
+        "stdout was: {make_token_stdout}"
+    );
+    assert!(
+        make_token_stdout.contains("deploy-key"),
+        "stdout was: {make_token_stdout}"
+    );
+    assert!(
+        !default_db_path.exists(),
+        "terminus.db must not be created during make:token"
+    );
+
+    // 6. List tokens via token:list
+    let out_token_list = dir.run_cli(&["token:list"], &envs);
+    assert!(
+        out_token_list.status.success(),
+        "token:list failed: {}",
+        String::from_utf8_lossy(&out_token_list.stderr)
+    );
+    let list_stdout = String::from_utf8_lossy(&out_token_list.stdout);
+    assert!(
+        list_stdout.contains("deploy-key"),
+        "token:list should contain deploy-key: {list_stdout}"
+    );
+    assert!(
+        list_stdout.contains("read, write"),
+        "token:list should contain abilities: {list_stdout}"
+    );
+
+    // Extract token ID directly from make:token output
+    let token_id = make_token_stdout
+        .lines()
+        .find_map(|line| {
+            let trimmed = line.trim();
+            if trimmed.contains("Token ID:") {
+                trimmed.split_whitespace().last().map(|s| s.to_string())
+            } else {
+                None
+            }
+        })
+        .expect("token id extracted from make:token output");
+
+    // 7. Revoke token via token:revoke --yes
+    let out_revoke = dir.run_cli(&["token:revoke", &token_id, "--yes"], &envs);
+    assert!(
+        out_revoke.status.success(),
+        "token:revoke failed: {}",
+        String::from_utf8_lossy(&out_revoke.stderr)
+    );
+    let revoke_stdout = String::from_utf8_lossy(&out_revoke.stdout);
+    assert!(
+        revoke_stdout.contains("revoked successfully"),
+        "stdout was: {revoke_stdout}"
+    );
+
+    // 8. Verify token:list reports empty
+    let out_token_empty = dir.run_cli(&["token:list"], &envs);
+    assert!(out_token_empty.status.success());
+    let empty_stdout = String::from_utf8_lossy(&out_token_empty.stdout);
+    assert!(
+        empty_stdout.contains("No personal access tokens found in")
+            && empty_stdout.contains("warehouse.db"),
+        "stdout was: {empty_stdout}"
+    );
+    assert!(
+        !default_db_path.exists(),
+        "terminus.db must never have been created during any step"
+    );
+}
+
+#[test]
+fn cli_database_commands_respect_postgres_and_mysql_when_configured() {
+    #[cfg(feature = "postgres")]
+    if let Some(pg_url) = external_test_url("TERMINUS_TEST_POSTGRES_URL", "postgres") {
+        let dir = TempWorkspace::new();
+        let envs = [("DATABASE_URL", pg_url.as_str())];
+        let db = Database::connect(&pg_url).unwrap();
+        let table = format!("cli_pg_probe_{}", std::process::id());
+        let _ = db.execute_params(&format!("DROP TABLE IF EXISTS {table}"), &[]);
+        db.execute_params(
+            &format!("CREATE TABLE {table} (id SERIAL PRIMARY KEY, title TEXT)"),
+            &[],
+        )
+        .unwrap();
+
+        // db:tables lists PostgreSQL tables
+        let out_tables = dir.run_cli(&["db:tables"], &envs);
+        assert!(out_tables.status.success());
+        let tables_stdout = String::from_utf8_lossy(&out_tables.stdout);
+        assert!(
+            tables_stdout.contains("PostgreSQL Database"),
+            "stdout was: {tables_stdout}"
+        );
+        assert!(
+            tables_stdout.contains(&table),
+            "stdout should list probe table {table}: {tables_stdout}"
+        );
+
+        // make:token generates token in PostgreSQL
+        let out_token = dir.run_cli(&["make:token", "pg-ci-token", "--abilities=admin"], &envs);
+        assert!(out_token.status.success());
+
+        // token:list sees the token
+        let out_list = dir.run_cli(&["token:list"], &envs);
+        assert!(out_list.status.success());
+        let list_stdout = String::from_utf8_lossy(&out_list.stdout);
+        assert!(
+            list_stdout.contains("pg-ci-token"),
+            "stdout was: {list_stdout}"
+        );
+
+        // tinker executes against PostgreSQL
+        let out_tinker = dir.run_cli(
+            &[
+                "tinker",
+                "--execute=SELECT name, abilities FROM personal_access_tokens WHERE name = 'pg-ci-token'",
+            ],
+            &envs,
+        );
+        assert!(out_tinker.status.success());
+        let tinker_stdout = String::from_utf8_lossy(&out_tinker.stdout);
+        assert!(
+            tinker_stdout.contains("pg-ci-token"),
+            "stdout was: {tinker_stdout}"
+        );
+
+        // cleanup
+        let _ = db.execute_params(&format!("DROP TABLE IF EXISTS {table}"), &[]);
+        let _ = db.execute_params(
+            "DELETE FROM personal_access_tokens WHERE name = 'pg-ci-token'",
+            &[],
+        );
+    }
+
+    #[cfg(feature = "mysql")]
+    if let Some(mysql_url) = external_test_url("TERMINUS_TEST_MYSQL_URL", "mysql") {
+        let dir = TempWorkspace::new();
+        let envs = [("DATABASE_URL", mysql_url.as_str())];
+        let db = Database::connect(&mysql_url).unwrap();
+        let table = format!("cli_mysql_probe_{}", std::process::id());
+        let _ = db.execute_params(&format!("DROP TABLE IF EXISTS {table}"), &[]);
+        db.execute_params(
+            &format!(
+                "CREATE TABLE {table} (id INT PRIMARY KEY AUTO_INCREMENT, title VARCHAR(100))"
+            ),
+            &[],
+        )
+        .unwrap();
+
+        // db:tables lists MySQL tables
+        let out_tables = dir.run_cli(&["db:tables"], &envs);
+        assert!(out_tables.status.success());
+        let tables_stdout = String::from_utf8_lossy(&out_tables.stdout);
+        assert!(
+            tables_stdout.contains("MySQL Database"),
+            "stdout was: {tables_stdout}"
+        );
+        assert!(
+            tables_stdout.contains(&table),
+            "stdout should list probe table {table}: {tables_stdout}"
+        );
+
+        // make:token generates token in MySQL
+        let out_token = dir.run_cli(
+            &["make:token", "mysql-ci-token", "--abilities=admin"],
+            &envs,
+        );
+        assert!(out_token.status.success());
+
+        // token:list sees the token
+        let out_list = dir.run_cli(&["token:list"], &envs);
+        assert!(out_list.status.success());
+        let list_stdout = String::from_utf8_lossy(&out_list.stdout);
+        assert!(
+            list_stdout.contains("mysql-ci-token"),
+            "stdout was: {list_stdout}"
+        );
+
+        // tinker executes against MySQL
+        let out_tinker = dir.run_cli(
+            &[
+                "tinker",
+                "--execute=SELECT name, abilities FROM personal_access_tokens WHERE name = 'mysql-ci-token'",
+            ],
+            &envs,
+        );
+        assert!(out_tinker.status.success());
+        let tinker_stdout = String::from_utf8_lossy(&out_tinker.stdout);
+        assert!(
+            tinker_stdout.contains("mysql-ci-token"),
+            "stdout was: {tinker_stdout}"
+        );
+
+        // cleanup
+        let _ = db.execute_params(&format!("DROP TABLE IF EXISTS {table}"), &[]);
+        let _ = db.execute_params(
+            "DELETE FROM personal_access_tokens WHERE name = 'mysql-ci-token'",
+            &[],
+        );
+    }
+}
